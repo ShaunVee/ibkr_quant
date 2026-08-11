@@ -26,7 +26,7 @@ sends a brief to Telegram. Built to expand to other brokers later.
 ## Status
 
 Full pipeline implemented end-to-end: ingest → store → analyze → report → deliver,
-with 34 passing unit tests. Fill in `.env`, then:
+with 89 passing unit tests. Fill in `.env`, then:
 
 - `python -m quantbot.pipeline --stage ingest` — pull + print holdings (verifies Flex).
 - `python -m quantbot.pipeline --dry-run` — full run, prints the report, no Telegram.
@@ -72,24 +72,33 @@ pytest -q                                       # tests
 
 ## Deploy (VPS)
 
-The pipeline is a run-to-completion job, so there's no long-running server — schedule
-it. Recommended: Docker + a systemd timer (files in [deploy/](deploy/)).
+One long-lived container that runs the **service** ([src/quantbot/service.py](src/quantbot/service.py)) —
+no host cron or systemd. It does two things at once:
+
+- **Scheduled:** fires the pipeline at **07:00 Asia/Singapore, Mon–Fri**.
+- **On demand:** listens on Telegram — send **`/report`** any time to run the brief now
+  (also `/status` for the next run + state, `/help`). Commands are accepted only from
+  your configured `TELEGRAM_CHAT_ID`. Runs are serialized, so a `/report` fired during a
+  run is told to wait rather than colliding on the SQLite writer.
+
+Deploy is one command:
 
 ```bash
-# On the VPS, from the repo root (e.g. /opt/ibkr_quant):
-docker compose -f deploy/docker-compose.yml build
-docker compose -f deploy/docker-compose.yml run --rm quantbot --dry-run   # verify
-
-# Schedule the weekday-morning run:
-sudo cp deploy/quantbot.service deploy/quantbot.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now quantbot.timer
-sudo systemctl start quantbot.service   # test one run now
+# On the VPS, from the repo root, with .env in place:
+docker compose -f deploy/docker-compose.yml up -d --build     # deploy / update
+docker compose -f deploy/docker-compose.yml logs -f           # watch it (look for "scheduler armed" / "command listener ready")
 ```
 
-Edit `WorkingDirectory` in `quantbot.service` and `OnCalendar` in `quantbot.timer`
-to match your VPS path and timezone. On any hard failure the pipeline sends a Telegram
-failure ping, so a silent morning is noticed.
+Then just message the bot **`/report`** to verify a real end-to-end run — no need to wait
+for the morning. (Or a one-off from the shell, overriding the service command:
+`docker compose -f deploy/docker-compose.yml run --rm quantbot python -m quantbot.pipeline --dry-run`.)
+
+Retune the schedule without rebuilding via env vars (`QUANTBOT_SCHEDULE_DAYS`,
+`QUANTBOT_SCHEDULE_HOUR`, `QUANTBOT_SCHEDULE_MINUTE`, `TZ`) — see the scheduler module.
+`restart: unless-stopped` survives crashes and reboots; a run missed while the host was
+down still fires on wake (misfire grace window). On any hard failure the pipeline sends
+a Telegram failure ping, so a silent morning is noticed. Do **not** run more than one
+instance — two pollers on the same bot token steal each other's commands.
 
 ## Layout
 

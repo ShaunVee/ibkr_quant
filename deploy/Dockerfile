@@ -15,6 +15,9 @@ RUN pip install --upgrade pip && pip install .
 # config.yaml is baked in; .env and the data volume are mounted at runtime.
 COPY config.yaml ./
 
-# Default: run the full pipeline once and exit (the scheduler invokes this).
-ENTRYPOINT ["python", "-m", "quantbot.pipeline"]
-CMD ["--stage", "all"]
+# Default: stay up and run the service — the daily scheduler (07:00 Asia/Singapore,
+# Mon-Fri by default) plus a Telegram command listener so you can trigger a run any
+# time with /report. Deploy is just `docker compose up -d`. To run the pipeline once
+# by hand instead, override the command:
+#   docker compose run --rm quantbot python -m quantbot.pipeline --dry-run
+CMD ["python", "-m", "quantbot.service"]

@@ -1,11 +1,18 @@
-# quantbot on a VPS. The pipeline is a run-to-completion job (pull -> analyze ->
-# report -> Telegram), so there is no long-running server. Schedule it with the
-# systemd timer in this directory (recommended), or `docker compose run` by hand.
+# quantbot on a VPS. The container stays up running the service
+# (src/quantbot/service.py): a scheduler that fires the pipeline every weekday morning
+# at 07:00 Asia/Singapore, PLUS a Telegram listener so you can trigger a run any time
+# by sending /report. Deployment is a one-liner and needs no host cron/systemd:
 #
-#   Manual run:   docker compose -f deploy/docker-compose.yml run --rm quantbot
-#   Dry run:      docker compose -f deploy/docker-compose.yml run --rm quantbot --dry-run
+#   Deploy / update:  docker compose -f deploy/docker-compose.yml up -d --build
+#   Follow logs:      docker compose -f deploy/docker-compose.yml logs -f
+#   Run once by hand: docker compose -f deploy/docker-compose.yml run --rm quantbot \
+#                       python -m quantbot.pipeline --stage all
+#   Dry run:          docker compose -f deploy/docker-compose.yml run --rm quantbot \
+#                       python -m quantbot.pipeline --dry-run
 #
-# The build context is the repo root so the Dockerfile can COPY src/ and config.yaml.
+# Do NOT scale this past 1 — two processes polling the same bot token steal each
+# other's updates. The build context is the repo root so the Dockerfile can COPY
+# src/ and config.yaml.
 
 services:
   quantbot:
@@ -15,12 +22,18 @@ services:
     image: quantbot:latest
     env_file:
       - ../.env
+    environment:
+      # Pins the schedule's fire time (and the report "as of" clock) independent
+      # of the host's system timezone. Override the schedule without rebuilding via
+      # QUANTBOT_SCHEDULE_{DAYS,HOUR,MINUTE} — see src/quantbot/scheduler.py.
+      TZ: Asia/Singapore
     volumes:
       # Persist the SQLite DB (daily snapshots + price cache) and the archived
       # HTML briefs (data/reports/).
       - quantbot-data:/app/data
-    # Run once and exit; restart is handled by the scheduler, not Docker.
-    restart: "no"
+    # Keep the scheduler alive across crashes and reboots. A missed 07:00 (host
+    # down at the time) still fires on wake via the job's misfire grace window.
+    restart: unless-stopped
 
 volumes:
   quantbot-data:
