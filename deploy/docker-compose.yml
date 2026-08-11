@@ -1,0 +1,25 @@
+# quantbot on a VPS. The pipeline is a run-to-completion job (pull -> analyze ->
+# report -> Telegram), so there is no long-running server. Schedule it with the
+# systemd timer in this directory (recommended), or `docker compose run` by hand.
+#
+#   Manual run:   docker compose -f deploy/docker-compose.yml run --rm quantbot
+#   Dry run:      docker compose -f deploy/docker-compose.yml run --rm quantbot --dry-run
+#
+# The build context is the repo root so the Dockerfile can COPY src/ and config.yaml.
+
+services:
+  quantbot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: quantbot:latest
+    env_file:
+      - ../.env
+    volumes:
+      # Persist the SQLite DB (daily snapshots + price cache) and logs.
+      - quantbot-data:/app/data
+    # Run once and exit; restart is handled by the scheduler, not Docker.
+    restart: "no"
+
+volumes:
+  quantbot-data:

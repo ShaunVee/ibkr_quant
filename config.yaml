@@ -1,0 +1,45 @@
+# quantbot configuration. Non-secret settings live here; secrets live in .env.
+
+report:
+  # Currency to display totals in. Base currency of the IBKR account is used for
+  # position values; set this to that currency to avoid FX conversion for now.
+  base_currency: USD
+  timezone: Singapore       # used for the "as of" timestamp in the report
+
+# Data providers. Swap free -> paid here without touching analysis code.
+providers:
+  broker: ibkr_flex
+  market_data:
+    prices: yfinance                # yfinance | (future) fmp | polygon
+    fundamentals: yfinance          # yfinance | (future) fmp | finnhub_paid
+    earnings: finnhub               # finnhub | (future) fmp
+    macro: fred                     # fred (authoritative, free)
+    econ_calendar: finnhub          # finnhub | (future) fmp
+
+# Rolling window (calendar days) of daily prices to pull for TA / risk math.
+history_days: 400
+
+# Macro series to report (FRED series IDs).
+macro_series:
+  cpi: CPIAUCSL                     # CPI, all urban consumers
+  core_cpi: CPILFESL                # CPI less food & energy
+  unemployment: UNRATE
+  fed_funds: FEDFUNDS
+  ten_year: DGS10
+
+# Risk profile / flag thresholds. These encode YOUR tolerance — tune freely.
+risk:
+  concentration_pct: 25.0           # single position > this % of book -> CONCENTRATION
+  sector_pct: 40.0                  # single sector  > this % of book -> SECTOR_OVERWEIGHT
+  portfolio_beta_high: 1.3          # weighted beta above this -> HIGH_BETA
+  rsi_overbought: 70.0
+  rsi_oversold: 30.0
+  earnings_soon_days: 5             # earnings within N days -> EARNINGS_SOON
+  drawdown_pct: 15.0                # down > this % from recent high -> DRAWDOWN
+  var_confidence: 0.95              # historical VaR confidence level
+  risk_free_rate: 0.04             # annual, for Sharpe
+
+narrative:
+  enabled: true
+  model: claude-sonnet-5            # claude-sonnet-5 (cheaper) | claude-opus-5
+  max_tokens: 900

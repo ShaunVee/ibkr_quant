@@ -1,0 +1,35 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="quantbot">
+  <defs>
+    <linearGradient id="qb-head" x1="48" y1="60" x2="208" y2="212" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1B2A46"/>
+      <stop offset="1" stop-color="#0F1B30"/>
+    </linearGradient>
+    <linearGradient id="qb-up" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#4ADE80"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="qb-down" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FB7185"/>
+      <stop offset="1" stop-color="#F43F5E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- antenna -->
+  <line x1="128" y1="66" x2="128" y2="42" stroke="#38BDF8" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="128" cy="34" r="10" fill="#38BDF8"/>
+
+  <!-- ears -->
+  <rect x="34" y="112" width="12" height="50" rx="6" fill="#33507F"/>
+  <rect x="210" y="112" width="12" height="50" rx="6" fill="#33507F"/>
+
+  <!-- robot head -->
+  <rect x="46" y="62" width="164" height="150" rx="34" fill="url(#qb-head)" stroke="#33507F" stroke-width="4"/>
+
+  <!-- left eye: up candlestick -->
+  <line x1="102" y1="96" x2="102" y2="182" stroke="url(#qb-up)" stroke-width="6" stroke-linecap="round"/>
+  <rect x="90" y="116" width="24" height="46" rx="6" fill="url(#qb-up)"/>
+
+  <!-- right eye: down candlestick -->
+  <line x1="154" y1="96" x2="154" y2="182" stroke="url(#qb-down)" stroke-width="6" stroke-linecap="round"/>
+  <rect x="142" y="122" width="24" height="46" rx="6" fill="url(#qb-down)"/>
+</svg>

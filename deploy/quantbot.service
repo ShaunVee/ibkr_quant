@@ -1,0 +1,19 @@
+# systemd service: runs one full quantbot pipeline via docker compose, then exits.
+# Install: copy this + quantbot.timer to /etc/systemd/system/, edit paths, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now quantbot.timer
+#
+# Check a manual run:   sudo systemctl start quantbot.service
+# Follow logs:          journalctl -u quantbot.service -f
+
+[Unit]
+Description=quantbot morning portfolio report
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Edit this to the repo location on your VPS.
+WorkingDirectory=/opt/ibkr_quant
+ExecStart=/usr/bin/docker compose -f deploy/docker-compose.yml run --rm quantbot --stage all
+# Give data providers time on a slow morning.
+TimeoutStartSec=900

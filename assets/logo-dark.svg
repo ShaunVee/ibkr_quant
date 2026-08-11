@@ -1,0 +1,32 @@
+<svg width="720" height="220" viewBox="0 0 720 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="quantbot logo">
+  <defs>
+    <linearGradient id="l-head" x1="48" y1="60" x2="208" y2="212" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1B2A46"/><stop offset="1" stop-color="#0F1B30"/>
+    </linearGradient>
+    <linearGradient id="l-up" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#4ADE80"/><stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="l-down" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FB7185"/><stop offset="1" stop-color="#F43F5E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- mark -->
+  <g transform="translate(24 -18) scale(0.92)">
+    <line x1="128" y1="66" x2="128" y2="42" stroke="#38BDF8" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="128" cy="34" r="10" fill="#38BDF8"/>
+    <rect x="34" y="112" width="12" height="50" rx="6" fill="#33507F"/>
+    <rect x="210" y="112" width="12" height="50" rx="6" fill="#33507F"/>
+    <rect x="46" y="62" width="164" height="150" rx="34" fill="url(#l-head)" stroke="#33507F" stroke-width="4"/>
+    <line x1="102" y1="96" x2="102" y2="182" stroke="url(#l-up)" stroke-width="6" stroke-linecap="round"/>
+    <rect x="90" y="116" width="24" height="46" rx="6" fill="url(#l-up)"/>
+    <line x1="154" y1="96" x2="154" y2="182" stroke="url(#l-down)" stroke-width="6" stroke-linecap="round"/>
+    <rect x="142" y="122" width="24" height="46" rx="6" fill="url(#l-down)"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="248" y="128" font-family="'SF Pro Display','Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="86" font-weight="700" letter-spacing="-2">
+    <tspan fill="#EAF1FA">quant</tspan><tspan fill="#48C2F0">bot</tspan>
+  </text>
+  <text x="250" y="166" font-family="'SF Mono',ui-monospace,Menlo,Consolas,monospace" font-size="21" letter-spacing="5" fill="#7C97BC">PORTFOLIO&#160;&#160;INTELLIGENCE</text>
+</svg>
