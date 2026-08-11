@@ -45,6 +45,7 @@ risk:
   drawdown_pct: 15.0                # down > this % from recent high -> DRAWDOWN
   var_confidence: 0.95              # historical VaR confidence level
   risk_free_rate: 0.04             # annual, for Sharpe
+  cluster_corr: 0.70                # holdings correlated >= this group into one cluster
 
 narrative:
   enabled: true

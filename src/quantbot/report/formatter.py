@@ -84,6 +84,43 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
     )
     out.append(("blank", ""))
 
+    # --- Today's move (contextualized) ---
+    mv = model.moves
+    if mv is not None and mv.port_ret_pct is not None:
+        out.append(("h2", "Today"))
+        if mv.port_z is not None:
+            tag = "unusual" if mv.unusual else "normal range"
+            out.append(("line", f"Move: {_signed_pct(mv.port_ret_pct)}  ·  "
+                                f"{abs(mv.port_z):.1f}σ ({tag})"))
+        else:
+            out.append(("line", f"Move: {_signed_pct(mv.port_ret_pct)}"))
+        if mv.top_contributors:
+            drivers = "  ·  ".join(
+                f"{m.symbol} {m.contribution_pp:+.1f}pp" for m in mv.top_contributors
+            )
+            out.append(("line", f"Drivers: {drivers}"))
+        if mv.abnormal_names:
+            ab = "  ·  ".join(f"{m.symbol} ({m.z:+.1f}σ)" for m in mv.abnormal_names)
+            out.append(("line", f"Abnormal: {ab}"))
+        out.append(("blank", ""))
+
+    # --- What changed since the last run ---
+    new = [c for c in model.flag_changes if c.status == "new"]
+    cleared = [c for c in model.flag_changes if c.status == "cleared"]
+    ongoing = [
+        c for c in model.flag_changes
+        if c.status == "persistent" and c.streak >= 2 and c.flag.severity in ("high", "warn")
+    ]
+    if new or cleared or ongoing:
+        out.append(("h2", "What Changed"))
+        for c in new:
+            out.append(("line", f"▲ NEW  {c.flag.message}"))
+        for c in cleared:
+            out.append(("line", f"✓ CLEARED  {c.flag.message}"))
+        for c in sorted(ongoing, key=lambda c: -c.streak):
+            out.append(("line", f"•  day {c.streak}  {c.flag.message}"))
+        out.append(("blank", ""))
+
     # --- Risk ---
     r = model.risk
     if r is not None:
@@ -107,6 +144,49 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
             top_sectors = sorted(r.sector_weights.items(), key=lambda x: -x[1])[:3]
             sec_str = ", ".join(f"{s} {_fmt_pct(w * 100, 0)}" for s, w in top_sectors)
             out.append(("line", f"Top sectors: {sec_str}"))
+        out.append(("blank", ""))
+
+    # --- Structure / diversification (analysis #1) ---
+    d = model.diversification
+    if d is not None:
+        out.append(("h2", "Structure"))
+        if d.effective_bets is not None:
+            share = (
+                f"  ·  top factor {_fmt_pct((d.top_factor_share or 0) * 100, 0)} of variance"
+                if d.top_factor_share is not None else ""
+            )
+            out.append(("line", f"Effective bets: {_fmt_num(d.effective_bets, 1)} "
+                                f"of {d.coverage} holdings{share}"))
+        if d.avg_correlation is not None:
+            out.append(("line", f"Avg correlation: {_fmt_num(d.avg_correlation, 2)} (weighted)"))
+        for c in d.clusters:
+            out.append(("line", f"Cluster: {', '.join(c.symbols)} "
+                                f"(corr {_fmt_num(c.avg_corr, 2)}  ·  "
+                                f"{_fmt_pct(c.weight * 100, 0)} of book)"))
+        out.append(("blank", ""))
+
+    # --- Risk contribution (analysis #2) ---
+    rc = model.contribution
+    if rc is not None and rc.contributions:
+        out.append(("h2", "Risk Contribution"))
+        rc_tbl = _Table(
+            headers=["Sym", "Wt%", "Risk%", "x"],
+            aligns=["l", "r", "r", "r"],
+            rows=[
+                [
+                    c.symbol,
+                    _fmt_num(c.weight * 100, 1),
+                    _fmt_num(c.risk_pct * 100, 1),
+                    _fmt_num(c.ratio, 1) if c.ratio is not None else "—",
+                ]
+                for c in rc.contributions
+            ],
+        )
+        out.append(("table", rc_tbl))
+        top = rc.contributions[0]
+        if top.ratio is not None and top.ratio >= 1.2:
+            out.append(("line", f"{top.symbol} drives {_fmt_pct(top.risk_pct * 100, 0)} "
+                                f"of risk on {_fmt_pct(top.weight * 100, 0)} weight."))
         out.append(("blank", ""))
 
     # --- Flags ---

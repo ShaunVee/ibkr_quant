@@ -20,8 +20,14 @@ _SYSTEM = (
     "You are a portfolio analyst writing a concise morning brief for the account owner. "
     "You are given a deterministic report containing already-computed numbers, risk "
     "metrics, and rule-based flags. Write a tight 2-4 sentence summary that synthesizes "
-    "what matters today: overall posture, the most important flags, and any imminent "
-    "earnings or macro events.\n\n"
+    "what matters today.\n\n"
+    "LEAD with what CHANGED and whether today's move was notable — the 'Today' and 'What "
+    "Changed' sections. Say if the move was within normal range or unusual (the sigma), "
+    "and name what drove it. Call out newly-triggered and cleared flags before anything "
+    "static. Demote unchanged posture and standing figures to supporting detail.\n"
+    "When the report shows hidden concentration — few effective bets, a high top-factor "
+    "share, a correlated cluster, or a name whose risk share far exceeds its weight — "
+    "surface it: it is exactly what the owner can't see on a positions screen.\n\n"
     "STRICT RULES:\n"
     "- Use ONLY numbers present in the provided report. Never invent or estimate figures.\n"
     "- Do NOT give buy/sell/hold advice or price predictions. Surface risks to look at.\n"
@@ -78,6 +84,26 @@ def _fallback(model: ReportModel) -> str:
     """Deterministic one-liner assembled from the computed model."""
     parts: list[str] = []
     cur = model.base_currency
+
+    mv = model.moves
+    if mv is not None and mv.port_ret_pct is not None:
+        sign = "+" if mv.port_ret_pct >= 0 else ""
+        move = f"Today {sign}{mv.port_ret_pct:.1f}%"
+        if mv.port_z is not None:
+            move += f" ({abs(mv.port_z):.1f}σ, {'unusual' if mv.unusual else 'normal range'})"
+        if mv.top_contributors:
+            move += ", led by " + ", ".join(
+                f"{m.symbol} {m.contribution_pp:+.1f}pp" for m in mv.top_contributors[:2]
+            )
+        parts.append(move + ".")
+
+    new = [c for c in model.flag_changes if c.status == "new"]
+    cleared = [c for c in model.flag_changes if c.status == "cleared"]
+    if new:
+        parts.append(f"New: {'; '.join(c.flag.message for c in new[:2])}")
+    if cleared:
+        parts.append(f"Cleared: {'; '.join(c.flag.message for c in cleared[:2])}")
+
     parts.append(
         f"Portfolio invested value {model.invested_value:,.0f} {cur} "
         f"across {len(model.positions)} positions."

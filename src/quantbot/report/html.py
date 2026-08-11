@@ -138,6 +138,21 @@ section{margin-bottom:30px;}
 .macro-tbl td.name{font-family:var(--sans);font-weight:600;}
 .macro-tbl tr:first-child td{border-top:none;}
 .macro-tbl .as-of{font-family:var(--sans);font-size:11px;color:var(--ink-3);font-weight:400;}
+.today{background:var(--surface-1);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow);}
+.today .move{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
+.today .mv-ret{font-size:30px;font-weight:700;letter-spacing:-.02em;font-family:var(--mono);}
+.today .mv-z{font-family:var(--mono);font-size:13px;color:var(--ink-2);}
+.today .mv-z.unusual{color:var(--warn);font-weight:700;}
+.today .drivers{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px 8px;}
+.chglist{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+.chg{display:flex;align-items:flex-start;gap:10px;font-size:14px;}
+.chg .lab{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+  padding:1px 7px;border-radius:5px;white-space:nowrap;flex:none;margin-top:2px;}
+.chg.new .lab{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);}
+.chg.cleared .lab{color:var(--pos);background:color-mix(in srgb,var(--pos) 14%,transparent);}
+.chg.ongoing .lab{color:var(--warn);background:color-mix(in srgb,var(--warn) 15%,transparent);}
+.clusters{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px 8px;}
+.rc-tbl td.hi{color:var(--warn);font-weight:700;}
 footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-3);
   display:flex;flex-wrap:wrap;gap:4px 14px;justify-content:space-between;}
 footer .note{max-width:60%;}
@@ -181,6 +196,59 @@ def _narrative(model: ReportModel) -> str:
     return f'\n  <p class="lead">{escape(model.narrative.strip())}</p>'
 
 
+def _today(model: ReportModel) -> str:
+    mv = model.moves
+    new = [c for c in model.flag_changes if c.status == "new"]
+    cleared = [c for c in model.flag_changes if c.status == "cleared"]
+    ongoing = [
+        c for c in model.flag_changes
+        if c.status == "persistent" and c.streak >= 2 and c.flag.severity in ("high", "warn")
+    ]
+    has_move = mv is not None and mv.port_ret_pct is not None
+    if not has_move and not (new or cleared or ongoing):
+        return ""
+
+    inner = ""
+    if has_move:
+        ret_cls = "pos" if mv.port_ret_pct >= 0 else "neg"
+        z_html = ""
+        if mv.port_z is not None:
+            unusual = " unusual" if mv.unusual else ""
+            tag = "unusual" if mv.unusual else "normal range"
+            z_html = f'<span class="mv-z{unusual}">{abs(mv.port_z):.1f}σ · {escape(tag)}</span>'
+        drivers = ""
+        if mv.top_contributors:
+            chips = "".join(
+                f'<span class="chip {"up" if m.contribution_pp >= 0 else "down"}">'
+                f'{escape(m.symbol)} {m.contribution_pp:+.1f}pp</span>'
+                for m in mv.top_contributors
+            )
+            drivers = f'<div class="drivers">{chips}</div>'
+        inner += (
+            f'<div class="move"><span class="mv-ret {ret_cls}">'
+            f'{escape(signed_pct(mv.port_ret_pct))}</span>{z_html}</div>{drivers}'
+        )
+
+    rows = []
+    for c in new:
+        rows.append(f'<div class="chg new"><span class="lab">new</span>'
+                    f'<span>{escape(c.flag.message)}</span></div>')
+    for c in cleared:
+        rows.append(f'<div class="chg cleared"><span class="lab">cleared</span>'
+                    f'<span>{escape(c.flag.message)}</span></div>')
+    for c in sorted(ongoing, key=lambda c: -c.streak):
+        rows.append(f'<div class="chg ongoing"><span class="lab">day {c.streak}</span>'
+                    f'<span>{escape(c.flag.message)}</span></div>')
+    if rows:
+        inner += f'<div class="chglist">{"".join(rows)}</div>'
+
+    return f"""
+  <section>
+    <div class="sec-head"><h2>Today</h2><span class="rule"></span></div>
+    <div class="today">{inner}</div>
+  </section>"""
+
+
 def _risk(model: ReportModel) -> str:
     r = model.risk
     if r is None:
@@ -218,6 +286,63 @@ def _risk(model: ReportModel) -> str:
     <div class="sec-head"><h2>Portfolio Risk</h2><span class="rule"></span></div>
     <div class="tiles">{tiles}
     </div>{context}
+  </section>"""
+
+
+def _structure(model: ReportModel) -> str:
+    d = model.diversification
+    rc = model.contribution
+    if d is None and rc is None:
+        return ""
+
+    blocks = ""
+    if d is not None:
+        tiles = ""
+        if d.effective_bets is not None:
+            tiles += (f'<div class="tile"><div class="k">Effective Bets</div>'
+                      f'<div class="v num">{escape(fmt_num(d.effective_bets, 1))}</div>'
+                      f'<div class="n">of {d.coverage} holdings</div></div>')
+        if d.top_factor_share is not None:
+            hi = " flag-crit" if d.top_factor_share >= 0.6 else ""
+            tiles += (f'<div class="tile{hi}"><div class="k">Top Factor</div>'
+                      f'<div class="v num">{escape(fmt_pct(d.top_factor_share * 100, 0))}</div>'
+                      f'<div class="n">of variance</div></div>')
+        if d.avg_correlation is not None:
+            tiles += (f'<div class="tile"><div class="k">Avg Correlation</div>'
+                      f'<div class="v num">{escape(fmt_num(d.avg_correlation, 2))}</div>'
+                      f'<div class="n">weighted</div></div>')
+        clusters = ""
+        if d.clusters:
+            items = "".join(
+                f'<span class="chip">{escape(", ".join(c.symbols))} · '
+                f'corr {escape(fmt_num(c.avg_corr, 2))} · {escape(fmt_pct(c.weight * 100, 0))}</span>'
+                for c in d.clusters
+            )
+            clusters = f'<div class="clusters">{items}</div>'
+        blocks += f'<div class="tiles">{tiles}</div>{clusters}'
+
+    if rc is not None and rc.contributions:
+        rows = ""
+        for c in rc.contributions:
+            ratio = c.ratio
+            cls = "r hi" if (ratio is not None and ratio >= 1.2) else "r"
+            rows += (
+                f'<tr><td class="name">{escape(c.symbol)}</td>'
+                f'<td class="r">{escape(fmt_pct(c.weight * 100, 1))}</td>'
+                f'<td class="{cls}">{escape(fmt_pct(c.risk_pct * 100, 1))}</td>'
+                f'<td class="r">{escape(fmt_num(ratio, 1)) if ratio is not None else "—"}</td></tr>'
+            )
+        blocks += (
+            '<table class="macro-tbl rc-tbl" style="margin-top:14px;">'
+            '<thead><tr><th>Position</th><th class="r">Weight</th>'
+            '<th class="r">Risk</th><th class="r">×</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table>'
+        )
+
+    return f"""
+  <section>
+    <div class="sec-head"><h2>Structure</h2><span class="rule"></span></div>
+    {blocks}
   </section>"""
 
 
@@ -334,7 +459,9 @@ def render_html(model: ReportModel) -> str:
         for part in (
             _header(model),
             _narrative(model),
+            _today(model),
             _risk(model),
+            _structure(model),
             _allocation(model),
             _flags(model),
             _holdings(model),

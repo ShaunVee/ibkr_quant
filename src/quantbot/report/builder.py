@@ -8,8 +8,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
+from quantbot.analysis.changes import FlagChange
+from quantbot.analysis.contribution import ContributionModel
+from quantbot.analysis.diversification import DiversificationModel
 from quantbot.analysis.fundamental import days_to_earnings
 from quantbot.analysis.macro import MacroSnapshot
+from quantbot.analysis.movement import MoveContext
 from quantbot.analysis.risk import RiskMetrics
 from quantbot.models import Flag, Fundamentals, Portfolio, TechnicalSnapshot
 
@@ -39,6 +43,10 @@ class ReportModel:
     risk: RiskMetrics | None = None
     macro: MacroSnapshot | None = None
     flags: list[Flag] = field(default_factory=list)
+    moves: MoveContext | None = None
+    flag_changes: list[FlagChange] = field(default_factory=list)
+    diversification: DiversificationModel | None = None
+    contribution: ContributionModel | None = None
     narrative: str | None = None
 
 
@@ -50,6 +58,10 @@ def build(
     macro: MacroSnapshot,
     flags: list[Flag],
     *,
+    moves: MoveContext | None = None,
+    flag_changes: list[FlagChange] | None = None,
+    diversification: DiversificationModel | None = None,
+    contribution: ContributionModel | None = None,
     today: date | None = None,
 ) -> ReportModel:
     today = today or portfolio.as_of.date()
@@ -87,4 +99,8 @@ def build(
         risk=risk,
         macro=macro,
         flags=flags,
+        moves=moves,
+        flag_changes=flag_changes or [],
+        diversification=diversification,
+        contribution=contribution,
     )

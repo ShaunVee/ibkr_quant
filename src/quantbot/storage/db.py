@@ -14,7 +14,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-from quantbot.models import Portfolio
+from quantbot.models import Flag, Portfolio
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS reports (
     format        TEXT NOT NULL,                -- 'markdown' | 'text'
     body          TEXT NOT NULL,
     created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS flag_history (
+    snapshot_date TEXT NOT NULL,               -- ISO date (one run per day)
+    account_id    TEXT NOT NULL,
+    code          TEXT NOT NULL,               -- e.g. CONCENTRATION, HIGH_BETA
+    symbol        TEXT NOT NULL DEFAULT '',    -- '' for portfolio-level flags
+    severity      TEXT NOT NULL,
+    message       TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    PRIMARY KEY (snapshot_date, account_id, code, symbol)
 );
 """
 
@@ -151,6 +162,30 @@ class Store:
                 )
         return int(snapshot_id)
 
+    def prior_position_weights(
+        self, account_id: str, before_date: date
+    ) -> dict[str, float]:
+        """Position weights from the most recent snapshot strictly before `before_date`.
+
+        Used to measure today's move on the book actually held into today. Empty dict
+        when there is no earlier snapshot.
+        """
+        before = before_date.isoformat()
+        with self._conn() as conn:
+            prev = conn.execute(
+                "SELECT id FROM snapshots WHERE account_id=? AND snapshot_date < ? "
+                "ORDER BY snapshot_date DESC LIMIT 1",
+                (account_id, before),
+            ).fetchone()
+            if prev is None:
+                return {}
+            rows = conn.execute(
+                "SELECT symbol, weight FROM positions "
+                "WHERE snapshot_id=? AND asset_class != 'CASH'",
+                (prev["id"],),
+            ).fetchall()
+        return {r["symbol"]: r["weight"] for r in rows if r["weight"] is not None}
+
     def portfolio_value_history(self, account_id: str) -> list[tuple[str, float]]:
         """Return [(iso_date, invested_val), ...] ascending — for realized risk metrics."""
         with self._conn() as conn:
@@ -193,3 +228,91 @@ class Store:
                 "VALUES (?, ?, ?, ?)",
                 (snapshot_date.isoformat(), fmt, body, datetime.now().isoformat()),
             )
+
+    # --- flag history (the memory layer) ---------------------------------
+    def save_flags(
+        self, account_id: str, snapshot_date: date, flags: list[Flag]
+    ) -> None:
+        """Persist today's flags. Idempotent per (day, account, code, symbol) so a
+        re-run of the same day replaces rather than duplicates."""
+        snap = snapshot_date.isoformat()
+        now = datetime.now().isoformat()
+        with self._conn() as conn:
+            # Clear this day's rows first so a flag that stopped firing today doesn't
+            # linger from an earlier run of the same date.
+            conn.execute(
+                "DELETE FROM flag_history WHERE snapshot_date=? AND account_id=?",
+                (snap, account_id),
+            )
+            conn.executemany(
+                """
+                INSERT INTO flag_history
+                    (snapshot_date, account_id, code, symbol, severity, message, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (snap, account_id, f.code, f.symbol or "", f.severity, f.message, now)
+                    for f in flags
+                ],
+            )
+
+    def prior_flags(self, account_id: str, before_date: date) -> list[Flag] | None:
+        """Flags from the most recent run strictly before `before_date`.
+
+        Returns None when there is no earlier run at all — the caller uses that to skip
+        new/cleared classification on the first day of tracking.
+        """
+        before = before_date.isoformat()
+        with self._conn() as conn:
+            prev = conn.execute(
+                "SELECT MAX(snapshot_date) AS d FROM flag_history "
+                "WHERE account_id=? AND snapshot_date < ?",
+                (account_id, before),
+            ).fetchone()
+            if prev is None or prev["d"] is None:
+                return None
+            rows = conn.execute(
+                "SELECT code, symbol, severity, message FROM flag_history "
+                "WHERE account_id=? AND snapshot_date=?",
+                (account_id, prev["d"]),
+            ).fetchall()
+        return [
+            Flag(
+                code=r["code"],
+                severity=r["severity"],
+                symbol=r["symbol"] or None,
+                message=r["message"],
+            )
+            for r in rows
+        ]
+
+    def flag_streak(
+        self, account_id: str, code: str, symbol: str | None, today: date
+    ) -> int:
+        """Number of consecutive runs (ending today) in which this flag was present."""
+        sym = symbol or ""
+        today_iso = today.isoformat()
+        with self._conn() as conn:
+            run_dates = [
+                r["snapshot_date"]
+                for r in conn.execute(
+                    "SELECT DISTINCT snapshot_date FROM flag_history "
+                    "WHERE account_id=? AND snapshot_date <= ? ORDER BY snapshot_date DESC",
+                    (account_id, today_iso),
+                ).fetchall()
+            ]
+            present = {
+                r["snapshot_date"]
+                for r in conn.execute(
+                    "SELECT snapshot_date FROM flag_history "
+                    "WHERE account_id=? AND code=? AND symbol=? AND snapshot_date <= ?",
+                    (account_id, code, sym, today_iso),
+                ).fetchall()
+            }
+        streak = 0
+        for d in run_dates:
+            if d in present:
+                streak += 1
+            else:
+                break
+        return streak
