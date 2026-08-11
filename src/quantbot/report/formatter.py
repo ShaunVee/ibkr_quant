@@ -11,6 +11,14 @@ from dataclasses import dataclass, field
 from html import escape
 
 from quantbot.report.builder import ReportModel
+from quantbot.report.numfmt import (
+    abbr_money as _abbr_money,
+    fmt_money as _fmt_money,
+    fmt_num as _fmt_num,
+    fmt_pct as _fmt_pct,
+    signed_money as _signed_money,
+    signed_pct as _signed_pct,
+)
 
 _SEVERITY_EMOJI = {"high": "🔴", "warn": "🟠", "info": "🔵"}
 # Render flags worst-first regardless of build order.
@@ -23,52 +31,6 @@ _MACRO_NAMES = {
     "fed_funds": "Fed Funds",
     "ten_year": "10Y Yield",
 }
-
-
-def _fmt_money(val: float | None, currency: str) -> str:
-    """Full-precision money — used only for the headline net-liq/cash/invested line."""
-    if val is None:
-        return "—"
-    return f"{val:,.0f} {currency}"
-
-
-def _abbr_money(val: float | None) -> str:
-    """Compact money for tables: 71,931 -> 71.9k, 1,240,000 -> 1.2M, -45 -> -45."""
-    if val is None:
-        return "—"
-    a = abs(val)
-    sign = "-" if val < 0 else ""
-    if a >= 1_000_000:
-        return f"{sign}{a / 1e6:.1f}M"
-    if a >= 1_000:
-        return f"{sign}{a / 1e3:.1f}k"
-    return f"{sign}{a:.0f}"
-
-
-def _signed_money(val: float | None) -> str:
-    """Compact money with an explicit +/- sign (for P/L columns)."""
-    if val is None:
-        return "—"
-    return ("+" if val >= 0 else "-") + _abbr_money(abs(val))
-
-
-def _signed_pct(val: float | None, digits: int = 1) -> str:
-    """Percent with an explicit +/- sign (for returns / YoY columns)."""
-    if val is None:
-        return "—"
-    return f"{val:+.{digits}f}%"
-
-
-def _fmt_pct(val: float | None, digits: int = 1) -> str:
-    if val is None:
-        return "—"
-    return f"{val:.{digits}f}%"
-
-
-def _fmt_num(val: float | None, digits: int = 2) -> str:
-    if val is None:
-        return "—"
-    return f"{val:.{digits}f}"
 
 
 @dataclass(slots=True)
@@ -236,6 +198,35 @@ def format_text(model: ReportModel) -> str:
     if model.narrative:
         body = f"{model.narrative.strip()}\n\n{body}"
     return body
+
+
+def format_caption(model: ReportModel, url: str | None = None) -> str:
+    """Short HTML caption for the photo message: headline, a trimmed narrative, a flag
+    summary, and (optionally) the full-report link. Kept well under Telegram's 1024-char
+    caption limit."""
+    cur = model.base_currency
+    parts = [f"<b>📈 Morning Brief — {escape(model.as_of.isoformat())}</b>"]
+    parts.append(
+        escape(f"Net liq {_fmt_money(model.net_liquidation, cur)}  ·  "
+               f"Cash {_fmt_money(model.total_cash, cur)}")
+    )
+    if model.narrative:
+        text = model.narrative.strip()
+        if len(text) > 380:
+            cut = text.rfind(". ", 0, 380)
+            text = text[: cut + 1] if cut > 120 else text[:377].rstrip() + "…"
+        parts.append(f"<i>{escape(text)}</i>")
+    if model.flags:
+        counts = {"high": 0, "warn": 0, "info": 0}
+        for f in model.flags:
+            counts[f.severity] = counts.get(f.severity, 0) + 1
+        summary = "  ".join(
+            f"{_SEVERITY_EMOJI[s]}{counts[s]}" for s in ("high", "warn", "info") if counts.get(s)
+        )
+        parts.append(f"{summary}  ·  {len(model.flags)} flags")
+    if url:
+        parts.append(f'🔗 <a href="{escape(url)}">Full report</a>')
+    return "\n".join(parts)
 
 
 def format_telegram_html(model: ReportModel) -> str:

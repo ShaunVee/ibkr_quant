@@ -16,6 +16,10 @@ sends a brief to Telegram. Built to expand to other brokers later.
   interface — upgrade to paid feeds without touching analysis code.
 - **Report:** everything computed deterministically; Claude writes prose *over* the
   numbers (never invents them). Falls back to a template if the API is unavailable.
+- **Delivery:** a styled, theme-aware HTML brief rendered to a **PNG** and sent as a
+  Telegram photo (readable on a phone, no tiny monospace), plus an optional **per-day
+  web link** served by a small nginx sidecar. Degrades to the plain-text brief if the
+  headless browser isn't available. Configure via `report.delivery` in `config.yaml`.
 - **"Recommendations":** rule-based **risk flags** (concentration, high beta, RSI
   extremes, earnings-soon, drawdown) — what to look at, not buy/sell calls.
 
@@ -37,6 +41,17 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env      # then fill in the values below
 ```
+
+For image delivery (styled PNG in Telegram), also install the browser renderer:
+
+```bash
+pip install -e ".[image]" && playwright install chromium
+```
+
+Without it, delivery falls back to the plain-text brief automatically. The Docker
+image installs this for you. To serve the per-day report links, run the `web` nginx
+sidecar (`docker compose -f deploy/docker-compose.yml up -d web`) and set
+`REPORT_BASE_URL` (e.g. `http://your-host:8087`).
 
 ### Secrets (`.env`)
 

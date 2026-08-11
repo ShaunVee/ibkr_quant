@@ -6,6 +6,18 @@ report:
   base_currency: USD
   timezone: Singapore       # used for the "as of" timestamp in the report
 
+  # Delivery of the daily brief:
+  #   text  — Telegram HTML message only (no browser needed)
+  #   image — render the styled HTML to a PNG and send as a Telegram photo
+  #   link  — write the HTML and send a per-day link (needs base_url + the web sidecar)
+  #   both  — image + link (falls back to text if the browser is unavailable)
+  delivery: both
+  image_theme: dark         # dark | light — color scheme used for the PNG
+  reports_dir: data/reports # where per-day .html / .png are written
+  # Public base URL the web sidecar serves reports_dir at (env REPORT_BASE_URL overrides).
+  # e.g. http://your-host:8087  — leave blank to skip the link.
+  base_url: ""
+
 # Data providers. Swap free -> paid here without touching analysis code.
 providers:
   broker: ibkr_flex
