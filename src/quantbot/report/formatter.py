@@ -136,6 +136,28 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
             out.append(("line", f"•  day {c.streak}  {c.flag.message}"))
         out.append(("blank", ""))
 
+    # --- Trends (history layer): how the book moved over the recorded window ---
+    tr = model.trends
+    if tr is not None:
+        out.append(("h2", f"Trends ({tr.sessions} sessions · {tr.span_days}d)"))
+        if tr.value_start is not None and tr.value_end is not None:
+            chg = tr.value_end - tr.value_start
+            out.append(("line", f"Account value: {_abbr_money(tr.value_start)} → "
+                                f"{_abbr_money(tr.value_end)}  ·  {_signed_money(chg)} "
+                                f"(incl. any deposits/withdrawals)"))
+        if tr.drawdown_from_peak is not None and tr.drawdown_from_peak < -0.001:
+            out.append(("line", f"Down {_fmt_pct(abs(tr.drawdown_from_peak) * 100)} "
+                                f"from the window peak"))
+        for md in tr.metric_drifts:
+            label, s_str, e_str = _trend_metric(md)
+            out.append(("line", f"{label}: {s_str} → {e_str}"))
+        if tr.weight_drifts:
+            shifts = "  ·  ".join(
+                f"{d.symbol} {d.delta * 100:+.1f}pp" for d in tr.weight_drifts
+            )
+            out.append(("line", f"Weight shifts: {shifts}"))
+        out.append(("blank", ""))
+
     # --- Risk ---
     r = model.risk
     if r is not None:
@@ -355,26 +377,30 @@ def format_caption(model: ReportModel) -> str:
     and a flag summary. Kept well under Telegram's 1024-char caption limit. Ends with a
     nudge to open the attached brief."""
     cur = model.base_currency
-    parts = [f"<b>📈 Morning Brief — {escape(model.as_of.isoformat())}</b>"]
+    parts = [f"<b>📈 Morning Brief · {escape(model.as_of.isoformat())}</b>"]
     parts.append(
-        escape(f"Net liq {_fmt_money(model.net_liquidation, cur)}  ·  "
-               f"Cash {_fmt_money(model.total_cash, cur)}")
+        escape(f"💰 Net liq  {_fmt_money(model.net_liquidation, cur)}"
+               f"    ·    Cash  {_fmt_money(model.total_cash, cur)}")
     )
     if model.narrative:
         text = model.narrative.strip()
         if len(text) > 380:
             cut = text.rfind(". ", 0, 380)
             text = text[: cut + 1] if cut > 120 else text[:377].rstrip() + "…"
-        parts.append(f"<i>{escape(text)}</i>")
+        sentences = "\n".join(escape(s) for s in split_sentences(text))
+        parts.append(f"<blockquote><i>{sentences}</i></blockquote>")
+    parts.append("")
     if model.flags:
         counts = {"high": 0, "warn": 0, "info": 0}
         for f in model.flags:
             counts[f.severity] = counts.get(f.severity, 0) + 1
-        summary = "  ".join(
-            f"{_SEVERITY_EMOJI[s]}{counts[s]}" for s in ("high", "warn", "info") if counts.get(s)
+        summary = "   ".join(
+            f"{_SEVERITY_EMOJI[s]} {counts[s]}" for s in ("high", "warn", "info") if counts.get(s)
         )
-        parts.append(f"{summary}  ·  {len(model.flags)} flags")
-    parts.append("📄 Tap the file above for the full brief.")
+        parts.append(f"🚩 <b>{len(model.flags)} flags</b>    {summary}")
+    else:
+        parts.append("✅ <b>No flags</b> — nothing breached your thresholds.")
+    parts.append("📄 <i>Tap the file above for the full brief.</i>")
     return "\n".join(parts)
 
 

@@ -43,7 +43,7 @@ def test_caption_has_headline_and_flag_summary():
     caption = formatter.format_caption(_model())
     assert "Morning Brief" in caption
     # Two flags in the sample: one high, one warn.
-    assert "🔴1" in caption and "🟠1" in caption
+    assert "🔴 1" in caption and "🟠 1" in caption
     assert "2 flags" in caption
     # Nudge to open the attached document.
     assert "Tap the file" in caption
