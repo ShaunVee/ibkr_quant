@@ -22,8 +22,18 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
 
+from quantbot.analysis import changes as changes_mod
 from quantbot.analysis import flags as flags_mod
-from quantbot.analysis import fundamental, macro, risk, technical
+from quantbot.analysis import (
+    contribution,
+    covariance,
+    diversification,
+    fundamental,
+    macro,
+    movement,
+    risk,
+    technical,
+)
 from quantbot.config import Config, load_config
 from quantbot.ingestion.brokers.factory import make_broker
 from quantbot.ingestion.marketdata.composite import MarketData
@@ -97,6 +107,31 @@ def stage_analyze(
         portfolio, fundamentals, technicals, risk_metrics, config.risk, today=today
     )
 
+    # --- change/memory layer: contextualize today's move, diff flags vs last run ---
+    account_id = portfolio.account.account_id
+    prior_flags = store.prior_flags(account_id, today)          # None on first-ever run
+    prior_weights = store.prior_position_weights(account_id, today)
+
+    moves = movement.compute(
+        price_frames, risk_metrics.weights, prior_weights=prior_weights or None
+    )
+
+    # --- structure layer (A): correlation/covariance-derived analyses ---
+    cov_model = covariance.build(price_frames)
+    diversification_model = diversification.compute(
+        cov_model,
+        risk_metrics.weights,
+        cluster_corr=float(config.risk_param("cluster_corr", 0.7)),
+    )
+    contribution_model = contribution.compute(cov_model, risk_metrics.weights)
+
+    store.save_flags(account_id, today, the_flags)             # persist before streaks
+    flag_changes = changes_mod.diff(
+        the_flags,
+        prior_flags,
+        streak_of=lambda code, sym: store.flag_streak(account_id, code, sym, today),
+    )
+
     model = builder.build(
         portfolio,
         fundamentals,
@@ -104,6 +139,10 @@ def stage_analyze(
         risk_metrics,
         macro_snapshot,
         the_flags,
+        moves=moves,
+        flag_changes=flag_changes,
+        diversification=diversification_model,
+        contribution=contribution_model,
         today=today,
     )
 
