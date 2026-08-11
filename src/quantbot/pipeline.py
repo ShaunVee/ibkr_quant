@@ -35,6 +35,7 @@ from quantbot.analysis import (
     movement,
     risk,
     technical,
+    trends,
 )
 from quantbot.config import Config, load_config
 from quantbot.ingestion.brokers.factory import make_broker
@@ -152,6 +153,25 @@ def stage_analyze(
         streak_of=lambda code, sym: store.flag_streak(account_id, code, sym, today),
     )
 
+    # Persist today's snapshot (weights, metrics) *before* trending so the recorded
+    # series includes today as its endpoint. prior_flags/prior_weights above already read
+    # the earlier runs (they filter strictly < today), so this ordering is safe.
+    store.save_snapshot(
+        portfolio,
+        metrics={
+            "portfolio_beta": risk_metrics.portfolio_beta,
+            "annualized_vol": risk_metrics.annualized_vol,
+            "sharpe": risk_metrics.sharpe,
+            "max_drawdown": risk_metrics.max_drawdown,
+            "herfindahl": risk_metrics.herfindahl,
+            "flag_count": len(the_flags),
+        },
+        snapshot_date=today,
+    )
+
+    # --- history & trends: read the recorded series back (None until 2+ snapshots) ---
+    trend_model = trends.compute(store.snapshot_history(account_id))
+
     model = builder.build(
         portfolio,
         fundamentals,
@@ -165,21 +185,8 @@ def stage_analyze(
         contribution=contribution_model,
         benchmark=benchmark_model,
         events=events_model,
+        trends=trend_model,
         today=today,
-    )
-
-    # Persist the snapshot (weights, metrics) for historical risk tracking.
-    store.save_snapshot(
-        portfolio,
-        metrics={
-            "portfolio_beta": risk_metrics.portfolio_beta,
-            "annualized_vol": risk_metrics.annualized_vol,
-            "sharpe": risk_metrics.sharpe,
-            "max_drawdown": risk_metrics.max_drawdown,
-            "herfindahl": risk_metrics.herfindahl,
-            "flag_count": len(the_flags),
-        },
-        snapshot_date=today,
     )
     return model
 

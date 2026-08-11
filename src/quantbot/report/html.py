@@ -284,6 +284,75 @@ def _today(model: ReportModel) -> str:
   </section>"""
 
 
+def _trend_tile(md: object) -> str:
+    """One metric-drift tile: current value big, prior value as a footnote."""
+    k = md.key
+    if k == "annualized_vol":
+        return (f'<div class="tile"><div class="k">Ann. Vol</div>'
+                f'<div class="v num">{escape(fmt_pct(md.end * 100))}</div>'
+                f'<div class="n">was {escape(fmt_pct(md.start * 100))}</div></div>')
+    if k == "portfolio_beta":
+        return (f'<div class="tile"><div class="k">Beta</div>'
+                f'<div class="v num">{escape(fmt_num(md.end, 2))}</div>'
+                f'<div class="n">was {escape(fmt_num(md.start, 2))}</div></div>')
+    if k == "herfindahl":
+        eff_e = fmt_num(1 / md.end, 1) if md.end else "—"
+        eff_s = fmt_num(1 / md.start, 1) if md.start else "—"
+        return (f'<div class="tile"><div class="k">Eff. Positions</div>'
+                f'<div class="v num">{escape(eff_e)}</div>'
+                f'<div class="n">was {escape(eff_s)} · higher = less concentrated</div></div>')
+    if k == "flag_count":
+        return (f'<div class="tile"><div class="k">Flags</div>'
+                f'<div class="v num">{int(md.end)}</div>'
+                f'<div class="n">was {int(md.start)}</div></div>')
+    return ""
+
+
+def _trends(model: ReportModel) -> str:
+    tr = model.trends
+    if tr is None:
+        return ""
+
+    tiles = "".join(_trend_tile(md) for md in tr.metric_drifts)
+    tiles_block = f'<div class="tiles">{tiles}</div>' if tiles else ""
+
+    context_bits = []
+    if tr.value_start is not None and tr.value_end is not None:
+        chg = tr.value_end - tr.value_start
+        cls = "pos" if chg >= 0 else "neg"
+        val = _gl("Account value", "Net liquidation across the tracked window. Includes any "
+                                   "deposits or withdrawals — not a pure investment return.")
+        context_bits.append(
+            f'<span>{val} <b class="num">{escape(abbr_money(tr.value_start))}</b> → '
+            f'<b class="num">{escape(abbr_money(tr.value_end))}</b> '
+            f'<b class="num {cls}">{escape(signed_money(chg))}</b></span>'
+        )
+    if tr.drawdown_from_peak is not None and tr.drawdown_from_peak < -0.001:
+        context_bits.append(
+            f'<span>Down <b class="num neg">{escape(fmt_pct(abs(tr.drawdown_from_peak) * 100))}</b> '
+            f'from window peak</span>'
+        )
+    context = f'<div class="context">{"".join(context_bits)}</div>' if context_bits else ""
+
+    shifts = ""
+    if tr.weight_drifts:
+        chips = "".join(
+            f'<span class="chip {"up" if d.delta >= 0 else "down"}">'
+            f'{escape(d.symbol)} {d.delta * 100:+.1f}pp</span>'
+            for d in tr.weight_drifts
+        )
+        shifts = ('<div class="ev-group"><div class="ev-lbl">Weight shifts</div>'
+                  f'<div class="drivers">{chips}</div></div>')
+
+    if not (tiles_block or context or shifts):
+        return ""
+    return f"""
+  <section>
+    <div class="sec-head"><h2>Trends</h2><span class="count">{tr.sessions} sessions · {tr.span_days}d</span><span class="rule"></span></div>
+    {tiles_block}{context}{shifts}
+  </section>"""
+
+
 def _risk(model: ReportModel) -> str:
     r = model.risk
     if r is None:
@@ -618,6 +687,7 @@ def render_html(model: ReportModel) -> str:
             _header(model),
             _narrative(model),
             _today(model),
+            _trends(model),
             _risk(model),
             _structure(model),
             _benchmark(model),

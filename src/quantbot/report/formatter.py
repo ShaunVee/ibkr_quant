@@ -81,6 +81,26 @@ def _render_table(t: _Table) -> list[str]:
     return lines
 
 
+def _trend_metric(md: "object") -> tuple[str, str, str]:
+    """Map a MetricDrift to (label, start_str, end_str) for the Trends readout.
+
+    Herfindahl is shown as effective positions (1/H) — more intuitive than the raw index
+    and consistent with the Risk section. Volatility is a fraction rendered as a percent.
+    """
+    key, start, end = md.key, md.start, md.end
+    if key == "annualized_vol":
+        return "Vol", _fmt_pct(start * 100), _fmt_pct(end * 100)
+    if key == "portfolio_beta":
+        return "Beta", _fmt_num(start, 2), _fmt_num(end, 2)
+    if key == "herfindahl":
+        eff_s = 1 / start if start else None
+        eff_e = 1 / end if end else None
+        return "Eff. positions", _fmt_num(eff_s, 1), _fmt_num(eff_e, 1)
+    if key == "flag_count":
+        return "Flags", f"{int(start)}", f"{int(end)}"
+    return key.replace("_", " ").title(), _fmt_num(start), _fmt_num(end)
+
+
 def _lines(model: ReportModel) -> list[tuple[str, object]]:
     """Return a list of (kind, payload) tuples. kind in {h1,h2,line,blank,table}.
 

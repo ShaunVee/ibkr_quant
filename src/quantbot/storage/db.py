@@ -196,6 +196,49 @@ class Store:
             ).fetchall()
         return [(r["snapshot_date"], r["invested_val"]) for r in rows]
 
+    def snapshot_history(
+        self, account_id: str, *, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Full recorded time series, ascending — the raw material for the trends layer.
+
+        Each record: {date, net_liq, invested_val, metrics, weights}. `metrics` is the
+        parsed per-snapshot blob (beta, vol, herfindahl, flag_count, ...); `weights` maps
+        non-cash symbol -> fraction of book at that snapshot. `limit` keeps only the most
+        recent N records. Empty until at least one snapshot has been recorded.
+        """
+        with self._conn() as conn:
+            snaps = conn.execute(
+                "SELECT id, snapshot_date, net_liq, invested_val, metrics_json "
+                "FROM snapshots WHERE account_id=? ORDER BY snapshot_date ASC",
+                (account_id,),
+            ).fetchall()
+            if not snaps:
+                return []
+            ids = [s["id"] for s in snaps]
+            placeholders = ",".join("?" * len(ids))
+            prows = conn.execute(
+                f"SELECT snapshot_id, symbol, weight FROM positions "
+                f"WHERE snapshot_id IN ({placeholders}) AND asset_class != 'CASH'",
+                ids,
+            ).fetchall()
+
+        weights_by_snap: dict[int, dict[str, float]] = {}
+        for pr in prows:
+            if pr["weight"] is not None:
+                weights_by_snap.setdefault(pr["snapshot_id"], {})[pr["symbol"]] = pr["weight"]
+
+        records = [
+            {
+                "date": s["snapshot_date"],
+                "net_liq": s["net_liq"],
+                "invested_val": s["invested_val"],
+                "metrics": json.loads(s["metrics_json"] or "{}"),
+                "weights": weights_by_snap.get(s["id"], {}),
+            }
+            for s in snaps
+        ]
+        return records[-limit:] if limit else records
+
     # --- price cache -----------------------------------------------------
     def upsert_prices(self, symbol: str, rows: list[dict[str, Any]]) -> None:
         """rows: list of {date, open, high, low, close, volume}."""
