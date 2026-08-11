@@ -26,8 +26,11 @@ import os
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 
 from apscheduler.triggers.cron import CronTrigger
+
+from quantbot.pipeline import PROGRESS_PREFIX
 
 log = logging.getLogger("quantbot.scheduler")
 
@@ -54,23 +57,20 @@ def make_trigger() -> CronTrigger:
     )
 
 
-def run_pipeline() -> str:
+def run_pipeline(on_progress: Callable[[str], None] | None = None) -> str:
     """Run one full pipeline, serialized against any other run.
 
-    Returns ``"ok"`` (exit 0), ``"failed"`` (non-zero / timeout / crash), or
-    ``"busy"`` (another run already holds the lock — this request was skipped).
+    If ``on_progress`` is given, each stage marker the pipeline prints is forwarded to
+    it (used to stream live progress to Telegram on an on-demand /report). Returns
+    ``"ok"`` (exit 0), ``"failed"`` (non-zero / timeout / crash), or ``"busy"`` (another
+    run already holds the lock — this request was skipped).
     """
     if not _run_lock.acquire(blocking=False):
         log.info("pipeline run requested but one is already in progress; skipping")
         return "busy"
     try:
         log.info("pipeline run starting")
-        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [sys.executable, "-m", "quantbot.pipeline", "--stage", "all"],
-            timeout=RUN_TIMEOUT_SEC,
-        )
-        log.info("pipeline run finished (exit %d)", result.returncode)
-        return "ok" if result.returncode == 0 else "failed"
+        return _stream_pipeline(on_progress)
     except subprocess.TimeoutExpired:
         log.error("pipeline run timed out after %ds", RUN_TIMEOUT_SEC)
         return "failed"
@@ -79,3 +79,36 @@ def run_pipeline() -> str:
         return "failed"
     finally:
         _run_lock.release()
+
+
+def _stream_pipeline(on_progress: Callable[[str], None] | None) -> str:
+    """Run the pipeline subprocess, echoing its stdout and forwarding stage markers.
+
+    A watchdog kills the run if it overruns RUN_TIMEOUT_SEC. stderr is inherited so the
+    real logs still land in `docker logs`; stdout is read here for the markers.
+    """
+    proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+        [sys.executable, "-m", "quantbot.pipeline", "--stage", "all"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    watchdog = threading.Timer(RUN_TIMEOUT_SEC, proc.kill)
+    watchdog.start()
+    try:
+        for line in proc.stdout:  # streams until the process exits
+            line = line.rstrip("\n")
+            if line.startswith(PROGRESS_PREFIX):
+                msg = line[len(PROGRESS_PREFIX):]
+                log.info("progress: %s", msg)
+                if on_progress is not None:
+                    try:
+                        on_progress(msg)
+                    except Exception:  # noqa: BLE001 - a failed ping must not abort the run
+                        log.warning("progress callback failed", exc_info=True)
+            elif line:
+                log.info("pipeline: %s", line)
+        proc.wait()
+    finally:
+        watchdog.cancel()
+    log.info("pipeline run finished (exit %d)", proc.returncode)
+    return "ok" if proc.returncode == 0 else "failed"

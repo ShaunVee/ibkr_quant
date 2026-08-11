@@ -48,6 +48,15 @@ log = logging.getLogger("quantbot")
 
 _DEFAULT_DB = Path("data/portfolio.db")
 
+# Stage progress markers are printed to stdout with this prefix. The service runner
+# (quantbot.scheduler.run_pipeline) picks them out and forwards them to Telegram so an
+# on-demand /report shows live progress; on a plain run they're just visible in the log.
+PROGRESS_PREFIX = "@@PROGRESS@@ "
+
+
+def _progress(msg: str) -> None:
+    print(f"{PROGRESS_PREFIX}{msg}", flush=True)
+
 
 def _setup_logging(verbose: bool) -> None:
     logging.basicConfig(
@@ -333,9 +342,12 @@ def _print_report(model: ReportModel) -> None:
 def _run_full(config: Config, args) -> int:
     store = Store(args.db or _DEFAULT_DB)
     try:
+        _progress("📥 Pulling portfolio from IBKR…")
         portfolio = stage_ingest(config)
+        _progress(f"📊 Fetching market data & crunching {len(portfolio.holdings)} holdings…")
         market = MarketData(config)
         model = stage_analyze(config, portfolio, market, store)
+        _progress("📝 Composing the brief…")
         model = stage_report(config, model)
     except Exception as exc:  # noqa: BLE001
         log.exception("Pipeline failed during analysis")
@@ -347,6 +359,7 @@ def _run_full(config: Config, args) -> int:
         return 0
 
     try:
+        _progress("📤 Delivering to Telegram…")
         stage_deliver(config, model, store)
     except Exception as exc:  # noqa: BLE001
         log.exception("Delivery failed")

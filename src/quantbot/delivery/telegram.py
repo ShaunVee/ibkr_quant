@@ -4,6 +4,7 @@ line boundaries. Uses HTML parse mode (only & < > need escaping — done upstrea
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 import requests
@@ -18,6 +19,17 @@ _CHUNK_SIZE = 3800
 # Telegram photo captions are capped far lower than message bodies.
 _CAPTION_LIMIT = 1024
 
+# Retry transient failures before giving up (a single slow response used to drop the
+# HTML brief straight to the text fallback). Document uploads legitimately take longer
+# than a message, so they get a roomier timeout.
+_MESSAGE_TIMEOUT = 30
+_DOCUMENT_TIMEOUT = 180
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE = 3.0  # seconds; multiplied by the attempt number
+
+# Network errors worth retrying (as opposed to a 4xx that will never succeed).
+_RETRYABLE_EXC = (requests.exceptions.Timeout, requests.exceptions.ConnectionError)
+
 
 class TelegramNotifier(Notifier):
     def __init__(
@@ -27,6 +39,7 @@ class TelegramNotifier(Notifier):
         *,
         parse_mode: str = "HTML",
         session: requests.Session | None = None,
+        max_attempts: int = _MAX_ATTEMPTS,
     ) -> None:
         self._base = f"https://api.telegram.org/bot{bot_token}"
         self._url = f"{self._base}/sendMessage"
@@ -34,6 +47,7 @@ class TelegramNotifier(Notifier):
         self._chat_id = chat_id
         self._parse_mode = parse_mode
         self._session = session or requests.Session()
+        self._max_attempts = max_attempts
 
     def send(self, text: str) -> None:
         for chunk in _chunk(text, _CHUNK_SIZE):
@@ -47,34 +61,82 @@ class TelegramNotifier(Notifier):
         mode and is truncated to Telegram's caption limit."""
         path = Path(doc_path)
         with path.open("rb") as fh:
-            resp = self._session.post(
+            self._post(
                 self._document_url,
+                what="sendDocument",
+                timeout=_DOCUMENT_TIMEOUT,
                 data={
                     "chat_id": self._chat_id,
                     "caption": caption[:_CAPTION_LIMIT],
                     "parse_mode": self._parse_mode,
                 },
                 files={"document": (filename or path.name, fh, "text/html")},
-                timeout=60,
             )
-        if resp.status_code != 200:
-            log.error("Telegram sendDocument failed (%s): %s", resp.status_code, resp.text)
-            resp.raise_for_status()
 
     def _send_one(self, text: str) -> None:
-        resp = self._session.post(
+        self._post(
             self._url,
+            what="sendMessage",
+            timeout=_MESSAGE_TIMEOUT,
             json={
                 "chat_id": self._chat_id,
                 "text": text,
                 "parse_mode": self._parse_mode,
                 "disable_web_page_preview": True,
             },
-            timeout=30,
         )
-        if resp.status_code != 200:
-            log.error("Telegram send failed (%s): %s", resp.status_code, resp.text)
-            resp.raise_for_status()
+
+    def _post(self, url: str, *, what: str, timeout: int, **kwargs) -> requests.Response:
+        """POST with retry/backoff. Retries transient network errors, Telegram 5xx, and
+        429 (honoring retry_after); raises on a non-retryable 4xx or after exhausting
+        attempts, so callers can degrade (e.g. HTML doc -> text) only on real failure."""
+        last_exc: Exception | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            _rewind_files(kwargs.get("files"))  # multipart bodies must restart each try
+            try:
+                resp = self._session.post(url, timeout=timeout, **kwargs)
+            except _RETRYABLE_EXC as exc:
+                last_exc = exc
+                log.warning(
+                    "Telegram %s attempt %d/%d failed: %s",
+                    what, attempt, self._max_attempts, exc,
+                )
+            else:
+                if resp.status_code == 200:
+                    return resp
+                if resp.status_code == 429:
+                    wait = int(resp.json().get("parameters", {}).get("retry_after", _BACKOFF_BASE))
+                    log.warning("Telegram %s rate-limited; waiting %ds", what, wait)
+                    time.sleep(wait)
+                    continue
+                if 500 <= resp.status_code < 600:
+                    log.warning(
+                        "Telegram %s got %d (attempt %d/%d): %s",
+                        what, resp.status_code, attempt, self._max_attempts, resp.text,
+                    )
+                else:
+                    # 4xx (bad request, forbidden, …) won't fix itself — fail fast.
+                    log.error("Telegram %s failed (%s): %s", what, resp.status_code, resp.text)
+                    resp.raise_for_status()
+            if attempt < self._max_attempts:
+                time.sleep(_BACKOFF_BASE * attempt)
+        if last_exc is not None:
+            raise last_exc
+        raise requests.exceptions.RetryError(
+            f"Telegram {what} failed after {self._max_attempts} attempts"
+        )
+
+
+def _rewind_files(files: dict | None) -> None:
+    """Seek any multipart file handles back to the start before a retry."""
+    if not files:
+        return
+    for value in files.values():
+        fh = value[1] if isinstance(value, tuple) else value
+        try:
+            fh.seek(0)
+        except (AttributeError, OSError):
+            pass
 
 
 def _chunk(text: str, size: int) -> list[str]:

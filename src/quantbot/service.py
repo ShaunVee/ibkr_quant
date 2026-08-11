@@ -58,8 +58,8 @@ def parse_command(text: str | None) -> str:
 
 
 def _run_and_ack(notifier: TelegramNotifier) -> None:
-    """Run the pipeline (in a worker thread) and acknowledge the outcome."""
-    status = run_pipeline()
+    """Run the pipeline (in a worker thread), streaming stage progress and the outcome."""
+    status = run_pipeline(on_progress=notifier.send)
     if status == "busy":
         notifier.send("⏳ A run is already in progress — hang tight.")
     elif status == "ok":

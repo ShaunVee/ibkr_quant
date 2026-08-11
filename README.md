@@ -26,7 +26,7 @@ sends a brief to Telegram. Built to expand to other brokers later.
 ## Status
 
 Full pipeline implemented end-to-end: ingest → store → analyze → report → deliver,
-with 89 passing unit tests. Fill in `.env`, then:
+with 93 passing unit tests. Fill in `.env`, then:
 
 - `python -m quantbot.pipeline --stage ingest` — pull + print holdings (verifies Flex).
 - `python -m quantbot.pipeline --dry-run` — full run, prints the report, no Telegram.
@@ -77,9 +77,11 @@ no host cron or systemd. It does two things at once:
 
 - **Scheduled:** fires the pipeline at **07:00 Asia/Singapore, Mon–Fri**.
 - **On demand:** listens on Telegram — send **`/report`** any time to run the brief now
-  (also `/status` for the next run + state, `/help`). Commands are accepted only from
-  your configured `TELEGRAM_CHAT_ID`. Runs are serialized, so a `/report` fired during a
-  run is told to wait rather than colliding on the SQLite writer.
+  (also `/status` for the next run + state, `/help`). An on-demand `/report` streams live
+  stage progress back to the chat (“📥 Pulling… → 📊 Crunching… → 📤 Delivering… → ✅”), so
+  you can see it’s working, not hung. Commands are accepted only from your configured
+  `TELEGRAM_CHAT_ID`. Runs are serialized, so a `/report` fired during a run is told to
+  wait rather than colliding on the SQLite writer.
 
 Deploy is one command:
 

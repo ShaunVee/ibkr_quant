@@ -41,7 +41,7 @@ def test_parse_command(text, expected):
 
 def test_ignores_unauthorized_chat(monkeypatch):
     ran = []
-    monkeypatch.setattr(service, "run_pipeline", lambda: ran.append(True) or "ok")
+    monkeypatch.setattr(service, "run_pipeline", lambda **kw: ran.append(True) or "ok")
     lis, fake = _listener(chat_id="42")
 
     lis._handle({"chat": {"id": 999}, "text": "/report"})  # not the owner
@@ -58,7 +58,7 @@ def test_help_replies(monkeypatch):
 
 def test_report_triggers_serialized_run(monkeypatch):
     calls = []
-    monkeypatch.setattr(service, "run_pipeline", lambda: calls.append(True) or "ok")
+    monkeypatch.setattr(service, "run_pipeline", lambda **kw: calls.append(True) or "ok")
 
     lis, fake = _listener(chat_id="42")
     lis._handle({"chat": {"id": 42}, "text": "/report"})
