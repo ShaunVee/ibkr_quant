@@ -82,6 +82,10 @@ class Config:
     def benchmark(self) -> dict[str, Any]:
         return self.raw.get("benchmark", {})
 
+    @property
+    def events(self) -> dict[str, Any]:
+        return self.raw.get("events", {})
+
     def risk_param(self, key: str, default: Any = None) -> Any:
         return self.risk.get(key, default)
 

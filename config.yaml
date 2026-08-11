@@ -36,6 +36,15 @@ benchmark:
   #   SLV: 0.30
   #   IBIT: 0.20
 
+# Event radar: forward earnings + macro calendar, weighted by your exposure, plus a
+# rates-sensitivity beta regressed from prices already pulled. The rate proxy is a bond
+# ETF fetched via the price provider (free); a name whose |beta| to it clears the
+# threshold counts toward your rate-exposed share.
+events:
+  horizon_days: 14                  # how far forward to scan for earnings + macro events
+  rate_proxy: TLT                   # bond ETF used as the rates proxy for beta
+  rate_beta_threshold: 0.20         # |beta| to the proxy above which a name is rate-sensitive
+
 # Macro series to report (FRED series IDs).
 macro_series:
   cpi: CPIAUCSL                     # CPI, all urban consumers

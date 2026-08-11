@@ -30,7 +30,11 @@ _SYSTEM = (
     "surface it: it is exactly what the owner can't see on a positions screen.\n"
     "If a benchmark comparison is present, note whether the book is ahead or behind and "
     "how much of its return is just market exposure (beta / R²) rather than alpha, and "
-    "mention any target-weight drift as a rebalancing cue.\n\n"
+    "mention any target-weight drift as a rebalancing cue.\n"
+    "If an event radar is present, flag forward risk the owner is walking into: earnings "
+    "clustering in the next few days and how much of the book reports, an imminent macro "
+    "print (CPI/FOMC), and — if a large share of the book is rate-sensitive — that it is "
+    "exposed to a rate print. Frame it as what to watch, never as a trade.\n\n"
     "STRICT RULES:\n"
     "- Use ONLY numbers present in the provided report. Never invent or estimate figures.\n"
     "- Do NOT give buy/sell/hold advice or price predictions. Surface risks to look at.\n"
@@ -106,6 +110,20 @@ def _fallback(model: ReportModel) -> str:
         parts.append(f"New: {'; '.join(c.flag.message for c in new[:2])}")
     if cleared:
         parts.append(f"Cleared: {'; '.join(c.flag.message for c in cleared[:2])}")
+
+    ev = model.events
+    if ev is not None:
+        if ev.earnings and ev.earnings_weight > 0:
+            names = ", ".join(f"{e.symbol} ({e.days_away}d)" for e in ev.earnings[:3])
+            parts.append(
+                f"Earnings ahead: {names} — {ev.earnings_weight * 100:.0f}% of the book "
+                f"reports within {ev.horizon_days}d."
+            )
+        if ev.rate_sensitive and ev.rate_sensitive_weight >= 0.30:
+            parts.append(
+                f"{ev.rate_sensitive_weight * 100:.0f}% of the book moves with "
+                f"{ev.rate_proxy} — watch rate prints."
+            )
 
     parts.append(
         f"Portfolio invested value {model.invested_value:,.0f} {cur} "

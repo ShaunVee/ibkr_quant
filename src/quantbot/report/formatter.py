@@ -215,6 +215,34 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
                                 f"({_signed_pct(dr.drift * 100, 0)})"))
         out.append(("blank", ""))
 
+    # --- Event radar (analysis #4): forward calendar, weighted by exposure ---
+    ev = model.events
+    if ev is not None:
+        out.append(("h2", f"Event Radar (next {ev.horizon_days}d)"))
+        if ev.earnings:
+            earn = "  ·  ".join(
+                f"{e.symbol} {e.day.strftime('%a')}·{e.days_away}d ({_fmt_pct(e.weight * 100, 0)})"
+                for e in ev.earnings
+            )
+            out.append(("line", f"Earnings: {earn}"))
+            if ev.earnings_weight > 0:
+                out.append(("line", f"→ {_fmt_pct(ev.earnings_weight * 100, 0)} "
+                                    f"of the book reports inside the window."))
+        if ev.macro:
+            mac = "  ·  ".join(
+                f"{m.event} {m.day.strftime('%a')}·{m.days_away}d"
+                + (f" [{m.impact}]" if m.impact else "")
+                for m in ev.macro[:6]
+            )
+            out.append(("line", f"Macro: {mac}"))
+        if ev.rate_sensitive:
+            names = "  ·  ".join(
+                f"{s.symbol} β{s.beta:+.2f}" for s in ev.rate_sensitive[:5]
+            )
+            out.append(("line", f"Rate exposure: {_fmt_pct(ev.rate_sensitive_weight * 100, 0)} "
+                                f"of the book moves with {ev.rate_proxy} — {names}"))
+        out.append(("blank", ""))
+
     # --- Flags ---
     out.append(("h2", f"Flags ({len(model.flags)})"))
     if not model.flags:

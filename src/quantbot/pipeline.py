@@ -29,6 +29,7 @@ from quantbot.analysis import (
     contribution,
     covariance,
     diversification,
+    events as events_mod,
     fundamental,
     macro,
     movement,
@@ -129,6 +130,12 @@ def stage_analyze(
     # --- benchmark-relative performance (analysis #5) ---
     benchmark_model = _benchmark(config, market, store, risk_metrics.weights, price_frames)
 
+    # --- event radar (analysis #4): forward calendar + rates exposure ---
+    events_model = _events(
+        config, market, store, fundamentals, risk_metrics.weights,
+        price_frames, macro_snapshot, today,
+    )
+
     store.save_flags(account_id, today, the_flags)             # persist before streaks
     flag_changes = changes_mod.diff(
         the_flags,
@@ -148,6 +155,7 @@ def stage_analyze(
         diversification=diversification_model,
         contribution=contribution_model,
         benchmark=benchmark_model,
+        events=events_model,
         today=today,
     )
 
@@ -199,6 +207,44 @@ def _benchmark(
         )
     except Exception as exc:  # noqa: BLE001 - benchmark is optional context
         log.warning("Benchmark analysis failed (%s); skipping.", exc)
+        return None
+
+
+def _events(
+    config: Config,
+    market: MarketData,
+    store: Store,
+    fundamentals,
+    weights: dict[str, float],
+    price_frames: dict[str, pd.DataFrame],
+    macro_snapshot,
+    today: date,
+):
+    """Assemble the forward event radar. The only new fetch is the rates-proxy price
+    series; everything else reuses data already gathered. Degrades to None on any issue."""
+    cfg = config.events
+    horizon = int(cfg.get("horizon_days", 14))
+    proxy = cfg.get("rate_proxy", "TLT")
+    try:
+        proxy_close = None
+        if proxy:
+            df = market.daily_prices(proxy, config.history_days)
+            if not df.empty:
+                _cache_prices(store, proxy, df)
+                proxy_close = df["close"]
+        return events_mod.compute(
+            fundamentals,
+            weights,
+            macro_events=macro_snapshot.events if macro_snapshot else None,
+            price_frames=price_frames,
+            rate_proxy_close=proxy_close,
+            rate_proxy=proxy or "TLT",
+            horizon_days=horizon,
+            rate_beta_threshold=float(cfg.get("rate_beta_threshold", 0.20)),
+            today=today,
+        )
+    except Exception as exc:  # noqa: BLE001 - event radar is optional context
+        log.warning("Event radar failed (%s); skipping.", exc)
         return None
 
 

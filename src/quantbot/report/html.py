@@ -153,6 +153,17 @@ section{margin-bottom:30px;}
 .chg.ongoing .lab{color:var(--warn);background:color-mix(in srgb,var(--warn) 15%,transparent);}
 .clusters{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px 8px;}
 .rc-tbl td.hi{color:var(--warn);font-weight:700;}
+.ev-group{margin-top:14px;}
+.ev-group .ev-lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:7px;}
+.ev-chips{display:flex;flex-wrap:wrap;gap:6px 8px;}
+.ev{display:inline-flex;align-items:baseline;gap:7px;font-size:13px;background:var(--surface-1);
+  border:1px solid var(--border);border-radius:8px;padding:5px 10px;}
+.ev .sym{font-weight:700;letter-spacing:-.01em;}
+.ev .when{font-family:var(--mono);font-size:11px;color:var(--ink-3);}
+.ev .wt{font-family:var(--mono);font-size:11px;color:var(--ink-2);}
+.ev.hi{border-color:color-mix(in srgb,var(--warn) 45%,var(--border));}
+.ev.hi .when{color:var(--warn);font-weight:700;}
+.ev .beta{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:600;}
 footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-3);
   display:flex;flex-wrap:wrap;gap:4px 14px;justify-content:space-between;}
 footer .note{max-width:60%;}
@@ -396,6 +407,60 @@ def _benchmark(model: ReportModel) -> str:
   </section>"""
 
 
+def _events(model: ReportModel) -> str:
+    ev = model.events
+    if ev is None:
+        return ""
+
+    tiles = ""
+    if ev.earnings and ev.earnings_weight > 0:
+        hi = " flag-crit" if ev.earnings_weight >= 0.30 else ""
+        tiles += (f'<div class="tile{hi}"><div class="k">Earnings Load</div>'
+                  f'<div class="v num">{escape(fmt_pct(ev.earnings_weight * 100, 0))}</div>'
+                  f'<div class="n">of book reports in {ev.horizon_days}d</div></div>')
+    if ev.rate_sensitive:
+        tiles += (f'<div class="tile"><div class="k">Rate Exposure</div>'
+                  f'<div class="v num">{escape(fmt_pct(ev.rate_sensitive_weight * 100, 0))}</div>'
+                  f'<div class="n">moves with {escape(ev.rate_proxy or "rates")}</div></div>')
+    tiles_block = f'<div class="tiles">{tiles}</div>' if tiles else ""
+
+    groups = ""
+    if ev.earnings:
+        chips = "".join(
+            f'<span class="ev{" hi" if e.days_away <= 2 else ""}"><span class="sym">{escape(e.symbol)}</span>'
+            f'<span class="when">{escape(e.day.strftime("%a"))} · {e.days_away}d</span>'
+            f'<span class="wt">{escape(fmt_pct(e.weight * 100, 0))}</span></span>'
+            for e in ev.earnings
+        )
+        groups += f'<div class="ev-group"><div class="ev-lbl">Earnings ahead</div><div class="ev-chips">{chips}</div></div>'
+    if ev.macro:
+        chips = "".join(
+            f'<span class="ev{" hi" if (m.impact or "").lower() == "high" else ""}">'
+            f'<span class="sym">{escape(m.event)}</span>'
+            f'<span class="when">{escape(m.day.strftime("%a"))} · {m.days_away}d</span>'
+            + (f'<span class="wt">{escape(m.impact)}</span>' if m.impact else "")
+            + '</span>'
+            for m in ev.macro[:6]
+        )
+        groups += f'<div class="ev-group"><div class="ev-lbl">Macro calendar</div><div class="ev-chips">{chips}</div></div>'
+    if ev.rate_sensitive:
+        chips = "".join(
+            f'<span class="ev"><span class="sym">{escape(s.symbol)}</span>'
+            f'<span class="beta">β{s.beta:+.2f}</span>'
+            f'<span class="wt">{escape(fmt_pct(s.weight * 100, 0))}</span></span>'
+            for s in ev.rate_sensitive[:6]
+        )
+        groups += (f'<div class="ev-group"><div class="ev-lbl">Rate-sensitive names '
+                   f'(β vs {escape(ev.rate_proxy or "rates")})</div>'
+                   f'<div class="ev-chips">{chips}</div></div>')
+
+    return f"""
+  <section>
+    <div class="sec-head"><h2>Event Radar</h2><span class="count">next {ev.horizon_days}d</span><span class="rule"></span></div>
+    {tiles_block}{groups}
+  </section>"""
+
+
 def _allocation(model: ReportModel) -> str:
     rows = [(p.symbol, (p.weight or 0) * 100) for p in model.positions if (p.weight or 0) > 0]
     if not rows:
@@ -513,6 +578,7 @@ def render_html(model: ReportModel) -> str:
             _risk(model),
             _structure(model),
             _benchmark(model),
+            _events(model),
             _allocation(model),
             _flags(model),
             _holdings(model),

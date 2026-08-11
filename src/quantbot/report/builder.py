@@ -12,6 +12,7 @@ from quantbot.analysis.benchmark import BenchmarkModel
 from quantbot.analysis.changes import FlagChange
 from quantbot.analysis.contribution import ContributionModel
 from quantbot.analysis.diversification import DiversificationModel
+from quantbot.analysis.events import EventRadar
 from quantbot.analysis.fundamental import days_to_earnings
 from quantbot.analysis.macro import MacroSnapshot
 from quantbot.analysis.movement import MoveContext
@@ -49,6 +50,7 @@ class ReportModel:
     diversification: DiversificationModel | None = None
     contribution: ContributionModel | None = None
     benchmark: BenchmarkModel | None = None
+    events: EventRadar | None = None
     narrative: str | None = None
 
 
@@ -65,6 +67,7 @@ def build(
     diversification: DiversificationModel | None = None,
     contribution: ContributionModel | None = None,
     benchmark: BenchmarkModel | None = None,
+    events: EventRadar | None = None,
     today: date | None = None,
 ) -> ReportModel:
     today = today or portfolio.as_of.date()
@@ -107,4 +110,5 @@ def build(
         diversification=diversification,
         contribution=contribution,
         benchmark=benchmark,
+        events=events,
     )
