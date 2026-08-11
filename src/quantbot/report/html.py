@@ -79,7 +79,10 @@ h1{font-size:clamp(24px,6vw,32px);margin:0;letter-spacing:-.02em;font-weight:700
 .hero .sub{margin-left:auto;text-align:right;font-size:13px;color:var(--ink-2);}
 .hero .sub b{color:var(--ink-1);font-weight:600;}
 .lead{margin:18px 0 26px;padding:16px 18px 16px 20px;background:var(--surface-2);border:1px solid var(--border);
-  border-left:3px solid var(--accent);border-radius:0 12px 12px 0;font-size:15px;line-height:1.6;}
+  border-left:3px solid var(--accent);border-radius:0 12px 12px 0;font-size:15px;line-height:1.55;
+  display:flex;flex-direction:column;gap:9px;}
+.lead>span:first-child{font-weight:600;color:var(--ink-1);}
+.lead>span{color:var(--ink-2);}
 section{margin-bottom:30px;}
 .sec-head{display:flex;align-items:center;gap:10px;margin:0 0 14px;}
 .sec-head h2{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:0;font-weight:700;}
@@ -164,6 +167,16 @@ section{margin-bottom:30px;}
 .ev.hi{border-color:color-mix(in srgb,var(--warn) 45%,var(--border));}
 .ev.hi .when{color:var(--warn);font-weight:700;}
 .ev .beta{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:600;}
+/* inline glossary term: dotted underline, popover on hover (desktop) or tap/focus (mobile) */
+.gl{position:relative;border-bottom:1px dotted currentColor;cursor:help;outline:none;-webkit-tap-highlight-color:transparent;}
+.gl>.pop{position:absolute;left:50%;bottom:calc(100% + 9px);transform:translateX(-50%);
+  width:max-content;max-width:230px;background:var(--ink-1);color:var(--ground);
+  font-family:var(--sans);font-size:12px;font-weight:500;line-height:1.4;letter-spacing:normal;
+  text-transform:none;text-align:left;padding:8px 11px;border-radius:8px;box-shadow:var(--shadow);
+  opacity:0;visibility:hidden;transition:opacity .12s ease;z-index:30;pointer-events:none;}
+.gl>.pop::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);
+  border:5px solid transparent;border-top-color:var(--ink-1);}
+.gl:hover>.pop,.gl:focus>.pop,.gl:focus-within>.pop{opacity:1;visibility:visible;}
 footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-3);
   display:flex;flex-wrap:wrap;gap:4px 14px;justify-content:space-between;}
 footer .note{max-width:60%;}
@@ -201,10 +214,19 @@ def _header(model: ReportModel) -> str:
   </header>"""
 
 
+def _gl(text: str, tip: str) -> str:
+    """An inline glossary term: shows `tip` on hover (desktop) or tap/focus (mobile)."""
+    return (f'<span class="gl" tabindex="0">{escape(text)}'
+            f'<span class="pop">{escape(tip)}</span></span>')
+
+
 def _narrative(model: ReportModel) -> str:
     if not model.narrative:
         return ""
-    return f'\n  <p class="lead">{escape(model.narrative.strip())}</p>'
+    from quantbot.report.formatter import split_sentences
+
+    spans = "".join(f"<span>{escape(s)}</span>" for s in split_sentences(model.narrative))
+    return f'\n  <div class="lead">{spans}</div>'
 
 
 def _today(model: ReportModel) -> str:
@@ -226,7 +248,9 @@ def _today(model: ReportModel) -> str:
         if mv.port_z is not None:
             unusual = " unusual" if mv.unusual else ""
             tag = "unusual" if mv.unusual else "normal range"
-            z_html = f'<span class="mv-z{unusual}">{abs(mv.port_z):.1f}σ · {escape(tag)}</span>'
+            sigma = _gl("σ", "How far today's move sits from this book's own typical day, "
+                             "in standard deviations. Beyond 2σ is unusually large — up or down.")
+            z_html = f'<span class="mv-z{unusual}">{abs(mv.port_z):.1f}{sigma} · {escape(tag)}</span>'
         drivers = ""
         if mv.top_contributors:
             chips = "".join(
@@ -275,12 +299,12 @@ def _risk(model: ReportModel) -> str:
     var = fmt_pct((r.var_pct or 0) * 100) if r.var_pct else "—"
 
     tiles = f"""
-      <div class="tile{beta_crit}">{beta_badge}<div class="k">Beta</div><div class="v num">{escape(fmt_num(r.portfolio_beta))}</div><div class="n">market sensitivity</div></div>
-      <div class="tile"><div class="k">Ann. Vol</div><div class="v num">{escape(ann_vol)}</div><div class="n">annualized</div></div>
-      <div class="tile"><div class="k">Sharpe</div><div class="v num">{escape(fmt_num(r.sharpe))}</div><div class="n">risk-adjusted</div></div>
-      <div class="tile{dd_crit}">{dd_badge}<div class="k">Max Drawdown</div><div class="v num">{escape(max_dd)}</div><div class="n">peak-to-trough</div></div>
-      <div class="tile"><div class="k">1-Day VaR</div><div class="v num">{escape(var)}</div><div class="n">95% historical</div></div>
-      <div class="tile"><div class="k">Eff. Positions</div><div class="v num">{escape(fmt_num(r.effective_positions, 1))}</div><div class="n">of {len(model.positions)} held</div></div>"""
+      <div class="tile{beta_crit}">{beta_badge}<div class="k">Beta</div><div class="v num">{escape(fmt_num(r.portfolio_beta))}</div><div class="n">1.0 = moves with market</div></div>
+      <div class="tile"><div class="k">Ann. Vol</div><div class="v num">{escape(ann_vol)}</div><div class="n">yearly swing · lower = calmer</div></div>
+      <div class="tile"><div class="k">Sharpe</div><div class="v num">{escape(fmt_num(r.sharpe))}</div><div class="n">return per unit risk · higher better</div></div>
+      <div class="tile{dd_crit}">{dd_badge}<div class="k">Max Drawdown</div><div class="v num">{escape(max_dd)}</div><div class="n">worst peak-to-trough · smaller better</div></div>
+      <div class="tile"><div class="k">1-Day VaR</div><div class="v num">{escape(var)}</div><div class="n">a typical bad day (95%)</div></div>
+      <div class="tile"><div class="k">Eff. Positions</div><div class="v num">{escape(fmt_num(r.effective_positions, 1))}</div><div class="n">of {len(model.positions)} held · higher = less concentrated</div></div>"""
 
     context_bits = []
     if r.top_position:
@@ -312,16 +336,16 @@ def _structure(model: ReportModel) -> str:
         if d.effective_bets is not None:
             tiles += (f'<div class="tile"><div class="k">Effective Bets</div>'
                       f'<div class="v num">{escape(fmt_num(d.effective_bets, 1))}</div>'
-                      f'<div class="n">of {d.coverage} holdings</div></div>')
+                      f'<div class="n">of {d.coverage} names · higher = more independent</div></div>')
         if d.top_factor_share is not None:
             hi = " flag-crit" if d.top_factor_share >= 0.6 else ""
             tiles += (f'<div class="tile{hi}"><div class="k">Top Factor</div>'
                       f'<div class="v num">{escape(fmt_pct(d.top_factor_share * 100, 0))}</div>'
-                      f'<div class="n">of variance</div></div>')
+                      f'<div class="n">one theme\'s share · lower better</div></div>')
         if d.avg_correlation is not None:
             tiles += (f'<div class="tile"><div class="k">Avg Correlation</div>'
                       f'<div class="v num">{escape(fmt_num(d.avg_correlation, 2))}</div>'
-                      f'<div class="n">weighted</div></div>')
+                      f'<div class="n">0 = unrelated · 1 = one bet</div></div>')
         clusters = ""
         if d.clusters:
             items = "".join(
@@ -343,10 +367,14 @@ def _structure(model: ReportModel) -> str:
                 f'<td class="{cls}">{escape(fmt_pct(c.risk_pct * 100, 1))}</td>'
                 f'<td class="r">{escape(fmt_num(ratio, 1)) if ratio is not None else "—"}</td></tr>'
             )
+        risk_h = _gl("Risk", "Share of the portfolio's total volatility this position "
+                             "drives — its real risk footprint, not its dollar size.")
+        ratio_h = _gl("×", "Risk share ÷ weight. 1 = pulls its weight; above 1 = drives "
+                           "more risk than its size; below 1 = less.")
         blocks += (
             '<table class="macro-tbl rc-tbl" style="margin-top:14px;">'
-            '<thead><tr><th>Position</th><th class="r">Weight</th>'
-            '<th class="r">Risk</th><th class="r">×</th></tr></thead>'
+            f'<thead><tr><th>Position</th><th class="r">Weight</th>'
+            f'<th class="r">{risk_h}</th><th class="r">{ratio_h}</th></tr></thead>'
             f'<tbody>{rows}</tbody></table>'
         )
 
@@ -364,19 +392,24 @@ def _benchmark(model: ReportModel) -> str:
 
     tiles = ""
     if bm.beta is not None:
-        r2 = f"R² {fmt_num(bm.r_squared, 2)}" if bm.r_squared is not None else "market sensitivity"
+        if bm.r_squared is not None:
+            r2 = (_gl("R²", f"Share of your day-to-day moves explained by {bm.symbol}. "
+                            "Near 1 = you basically are the index; low = you move on your own.")
+                  + f" {escape(fmt_num(bm.r_squared, 2))}")
+        else:
+            r2 = "1.0 = tracks the index"
         tiles += (f'<div class="tile"><div class="k">Beta vs {escape(bm.symbol)}</div>'
                   f'<div class="v num">{escape(fmt_num(bm.beta, 2))}</div>'
-                  f'<div class="n">{escape(r2)}</div></div>')
+                  f'<div class="n">{r2}</div></div>')
     if bm.alpha_annual_pct is not None:
         cls = "pos" if bm.alpha_annual_pct >= 0 else "neg"
         tiles += (f'<div class="tile"><div class="k">Alpha</div>'
                   f'<div class="v num {cls}">{escape(signed_pct(bm.alpha_annual_pct))}</div>'
-                  f'<div class="n">annualized</div></div>')
+                  f'<div class="n">return beyond the market · higher better</div></div>')
     if bm.tracking_error_pct is not None:
         tiles += (f'<div class="tile"><div class="k">Tracking Error</div>'
                   f'<div class="v num">{escape(fmt_pct(bm.tracking_error_pct))}</div>'
-                  f'<div class="n">annualized</div></div>')
+                  f'<div class="n">how far you stray · lower = closer</div></div>')
 
     chips = ""
     for w in bm.windows:
@@ -384,8 +417,12 @@ def _benchmark(model: ReportModel) -> str:
         chips += (f'<span class="chip {cls}">{escape(w.label)} '
                   f'{escape(signed_pct(w.excess_pct))} vs {escape(bm.symbol)}</span>')
     if bm.up_capture is not None and bm.down_capture is not None:
-        chips += (f'<span class="chip">up capture {escape(fmt_pct(bm.up_capture * 100, 0))}</span>'
-                  f'<span class="chip">down capture {escape(fmt_pct(bm.down_capture * 100, 0))}</span>')
+        up_gl = _gl("up capture", "Of the index's gains, how much you catch. "
+                                  "Over 100% = you rise more than it does.")
+        down_gl = _gl("down capture", "Of the index's losses, how much you take. "
+                                      "Under 100% = you fall less than it does.")
+        chips += (f'<span class="chip">{up_gl} {escape(fmt_pct(bm.up_capture * 100, 0))}</span>'
+                  f'<span class="chip">{down_gl} {escape(fmt_pct(bm.down_capture * 100, 0))}</span>')
     drivers = f'<div class="drivers">{chips}</div>' if chips else ""
 
     drift = ""
@@ -444,9 +481,13 @@ def _events(model: ReportModel) -> str:
         )
         groups += f'<div class="ev-group"><div class="ev-lbl">Macro calendar</div><div class="ev-chips">{chips}</div></div>'
     if ev.rate_sensitive:
+        proxy = ev.rate_proxy or "rates"
+        beta_gl = _gl("β", f"Beta to {proxy}: how hard this name moves when rates move "
+                           f"(measured via the {proxy} bond ETF). Bigger magnitude = more "
+                           "rate-sensitive; sign shows direction.")
         chips = "".join(
             f'<span class="ev"><span class="sym">{escape(s.symbol)}</span>'
-            f'<span class="beta">β{s.beta:+.2f}</span>'
+            f'<span class="beta">{beta_gl}{s.beta:+.2f}</span>'
             f'<span class="wt">{escape(fmt_pct(s.weight * 100, 0))}</span></span>'
             for s in ev.rate_sensitive[:6]
         )
@@ -517,7 +558,9 @@ def _holdings(model: ReportModel) -> str:
         if p.pe is not None:
             chips.append(f'<span class="chip">PE {escape(fmt_num(p.pe))}</span>')
         if p.rsi14 is not None:
-            chips.append(f'<span class="chip">RSI {escape(fmt_num(p.rsi14, 0))}</span>')
+            rsi_gl = _gl("RSI", "Relative Strength Index (0–100): momentum gauge. "
+                                "Above 70 = overbought, below 30 = oversold.")
+            chips.append(f'<span class="chip">{rsi_gl} {escape(fmt_num(p.rsi14, 0))}</span>')
         if p.ret_1m is not None:
             cls = "up" if p.ret_1m >= 0 else "down"
             chips.append(f'<span class="chip {cls}">1m {escape(signed_pct(p.ret_1m))}</span>')

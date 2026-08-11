@@ -7,6 +7,7 @@ neutral IR (see _lines) keeps the text and HTML renderers in sync.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from html import escape
 
@@ -31,6 +32,20 @@ _MACRO_NAMES = {
     "fed_funds": "Fed Funds",
     "ten_year": "10Y Yield",
 }
+
+
+# Split on sentence-ending punctuation followed by whitespace and a capital/digit — so
+# the narrative's wall of prose becomes one scannable line per sentence. Decimals (no
+# space after the dot) and lowercase abbreviations ("e.g.") are left intact.
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Break narrative prose into individual sentences for line-per-sentence rendering."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    return [s.strip() for s in _SENTENCE_SPLIT.split(text) if s.strip()]
 
 
 @dataclass(slots=True)
@@ -330,7 +345,8 @@ def format_text(model: ReportModel) -> str:
             parts.append(str(payload))
     body = "\n".join(parts)
     if model.narrative:
-        body = f"{model.narrative.strip()}\n\n{body}"
+        summary = "\n".join(split_sentences(model.narrative))
+        body = f"{summary}\n\n{body}"
     return body
 
 
@@ -366,7 +382,8 @@ def format_telegram_html(model: ReportModel) -> str:
     """Telegram HTML: bold headers, escaped body, tables in <pre> monospace blocks."""
     parts: list[str] = []
     if model.narrative:
-        parts.append(f"<i>{escape(model.narrative.strip())}</i>\n")
+        summary = "\n".join(escape(s) for s in split_sentences(model.narrative))
+        parts.append(f"<i>{summary}</i>\n")
     for kind, payload in _lines(model):
         if kind == "h1":
             parts.append(f"<b>📈 {escape(str(payload))}</b>")
