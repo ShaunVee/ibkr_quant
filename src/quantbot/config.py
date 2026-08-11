@@ -73,13 +73,40 @@ class Config:
         return self.risk.get(key, default)
 
 
+def _resolve_config_path(config_path: str | Path | None) -> Path:
+    """Find config.yaml. Explicit path > $QUANTBOT_CONFIG > CWD > repo root.
+
+    The repo-root fallback only works for an editable install; a pip-installed
+    package lives in site-packages, so CWD (the Docker workdir) is the reliable one.
+    """
+    if config_path:
+        return Path(config_path)
+
+    candidates: list[Path] = []
+    env_cfg = os.environ.get("QUANTBOT_CONFIG")
+    if env_cfg:
+        candidates.append(Path(env_cfg))
+    candidates.append(Path.cwd() / "config.yaml")
+    candidates.append(_REPO_ROOT / "config.yaml")
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[-1]  # let the caller raise with a sensible path
+
+
 def load_config(config_path: str | Path | None = None) -> Config:
     """Load config.yaml + .env into a Config object."""
-    load_dotenv(_REPO_ROOT / ".env")
+    # In Docker, secrets arrive as real env vars (compose env_file); .env is optional.
+    load_dotenv()                                   # search CWD and parents
+    load_dotenv(_REPO_ROOT / ".env", override=False)  # editable-install fallback
 
-    path = Path(config_path) if config_path else _REPO_ROOT / "config.yaml"
+    path = _resolve_config_path(config_path)
     if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
+        raise FileNotFoundError(
+            f"Config file not found: {path}. Set QUANTBOT_CONFIG, pass --config, "
+            f"or run from a directory containing config.yaml."
+        )
 
     with path.open("r", encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
