@@ -30,7 +30,7 @@ class TelegramNotifier(Notifier):
     ) -> None:
         self._base = f"https://api.telegram.org/bot{bot_token}"
         self._url = f"{self._base}/sendMessage"
-        self._photo_url = f"{self._base}/sendPhoto"
+        self._document_url = f"{self._base}/sendDocument"
         self._chat_id = chat_id
         self._parse_mode = parse_mode
         self._session = session or requests.Session()
@@ -39,23 +39,26 @@ class TelegramNotifier(Notifier):
         for chunk in _chunk(text, _CHUNK_SIZE):
             self._send_one(chunk)
 
-    def send_photo(self, photo_path: str | Path, caption: str = "") -> None:
-        """Upload an image as a photo message. Caption uses the configured parse mode
-        and is truncated to Telegram's caption limit."""
-        path = Path(photo_path)
+    def send_document(
+        self, doc_path: str | Path, caption: str = "", *, filename: str | None = None
+    ) -> None:
+        """Upload a file as a document. An .html file opens in Telegram's in-app browser
+        when tapped — full-quality, self-contained. Caption uses the configured parse
+        mode and is truncated to Telegram's caption limit."""
+        path = Path(doc_path)
         with path.open("rb") as fh:
             resp = self._session.post(
-                self._photo_url,
+                self._document_url,
                 data={
                     "chat_id": self._chat_id,
                     "caption": caption[:_CAPTION_LIMIT],
                     "parse_mode": self._parse_mode,
                 },
-                files={"photo": (path.name, fh, "image/png")},
+                files={"document": (filename or path.name, fh, "text/html")},
                 timeout=60,
             )
         if resp.status_code != 200:
-            log.error("Telegram sendPhoto failed (%s): %s", resp.status_code, resp.text)
+            log.error("Telegram sendDocument failed (%s): %s", resp.status_code, resp.text)
             resp.raise_for_status()
 
     def _send_one(self, text: str) -> None:

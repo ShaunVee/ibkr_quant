@@ -39,15 +39,11 @@ def test_render_html_escapes_narrative():
     assert "Risk &amp; reward &lt; balanced &gt; today" in doc
 
 
-def test_caption_includes_link_and_flag_summary():
-    caption = formatter.format_caption(_model(), url="http://host/2026-08-11.html")
+def test_caption_has_headline_and_flag_summary():
+    caption = formatter.format_caption(_model())
     assert "Morning Brief" in caption
-    assert '<a href="http://host/2026-08-11.html">Full report</a>' in caption
     # Two flags in the sample: one high, one warn.
     assert "🔴1" in caption and "🟠1" in caption
     assert "2 flags" in caption
-
-
-def test_caption_without_url_has_no_link():
-    caption = formatter.format_caption(_model())
-    assert "Full report" not in caption
+    # Nudge to open the attached document.
+    assert "Tap the file" in caption

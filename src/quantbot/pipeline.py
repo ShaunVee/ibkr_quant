@@ -153,52 +153,38 @@ def stage_deliver(config: Config, model: ReportModel, store: Store) -> None:
     from quantbot.delivery.telegram import TelegramNotifier
     from quantbot.report import html as html_mod
 
-    mode = config.delivery  # text | image | link | both
+    mode = config.delivery  # html | text
     today = model.as_of
 
-    # Always render + persist the rich HTML — it's cheap, archives the day, and the web
-    # sidecar serves it for the per-day link.
+    # Render + persist the self-contained HTML brief. It's the attachment we send and an
+    # archive of the day.
     html_doc = html_mod.render_html(model)
     reports_dir = Path(config.reports_dir)
     reports_dir.mkdir(parents=True, exist_ok=True)
-    (reports_dir / f"{today.isoformat()}.html").write_text(html_doc, encoding="utf-8")
+    html_path = reports_dir / f"{today.isoformat()}.html"
+    html_path.write_text(html_doc, encoding="utf-8")
     store.save_report(today, "html", html_doc)
     store.save_report(today, "markdown", formatter.format_text(model))
-
-    url = (
-        f"{config.base_url}/{today.isoformat()}.html"
-        if config.base_url and mode in ("link", "both")
-        else None
-    )
 
     notifier = TelegramNotifier(
         config.secrets.get("TELEGRAM_BOT_TOKEN"),
         config.secrets.get("TELEGRAM_CHAT_ID"),
     )
 
-    delivered_image = False
-    if mode in ("image", "both"):
+    if mode != "text":
         try:
-            from quantbot.report.image import render_png
-
-            png_path = render_png(
-                html_doc, reports_dir / f"{today.isoformat()}.png", theme=config.image_theme
+            notifier.send_document(
+                html_path,
+                formatter.format_caption(model),
+                filename=f"brief-{today.isoformat()}.html",
             )
-            notifier.send_photo(png_path, formatter.format_caption(model, url))
-            delivered_image = True
-        except Exception as exc:  # noqa: BLE001 - degrade to text on any render/send issue
-            log.warning("Image delivery unavailable (%s); falling back to text brief.", exc)
+            log.info("Report delivered to Telegram (HTML document).")
+            return
+        except Exception as exc:  # noqa: BLE001 - degrade to text on any send issue
+            log.warning("HTML document delivery failed (%s); falling back to text brief.", exc)
 
-    if not delivered_image:
-        body = formatter.format_telegram_html(model)
-        if url:
-            body += f'\n\n🔗 <a href="{url}">Full report</a>'
-        notifier.send(body)
-
-    log.info(
-        "Report delivered to Telegram (mode=%s, image=%s, link=%s).",
-        mode, delivered_image, bool(url),
-    )
+    notifier.send(formatter.format_telegram_html(model))
+    log.info("Report delivered to Telegram (text).")
 
 
 def _notify_failure(config: Config, message: str) -> None:

@@ -200,10 +200,10 @@ def format_text(model: ReportModel) -> str:
     return body
 
 
-def format_caption(model: ReportModel, url: str | None = None) -> str:
-    """Short HTML caption for the photo message: headline, a trimmed narrative, a flag
-    summary, and (optionally) the full-report link. Kept well under Telegram's 1024-char
-    caption limit."""
+def format_caption(model: ReportModel) -> str:
+    """Short HTML caption for the HTML-document message: headline, a trimmed narrative,
+    and a flag summary. Kept well under Telegram's 1024-char caption limit. Ends with a
+    nudge to open the attached brief."""
     cur = model.base_currency
     parts = [f"<b>📈 Morning Brief — {escape(model.as_of.isoformat())}</b>"]
     parts.append(
@@ -224,8 +224,7 @@ def format_caption(model: ReportModel, url: str | None = None) -> str:
             f"{_SEVERITY_EMOJI[s]}{counts[s]}" for s in ("high", "warn", "info") if counts.get(s)
         )
         parts.append(f"{summary}  ·  {len(model.flags)} flags")
-    if url:
-        parts.append(f'🔗 <a href="{escape(url)}">Full report</a>')
+    parts.append("📄 Tap the file above for the full brief.")
     return "\n".join(parts)
 
 

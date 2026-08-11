@@ -51,25 +51,12 @@ class Config:
 
     @property
     def delivery(self) -> str:
-        """How to deliver the brief: text | image | link | both."""
-        return self.raw.get("report", {}).get("delivery", "both")
-
-    @property
-    def base_url(self) -> str | None:
-        """Public base URL for per-day report links (env REPORT_BASE_URL wins).
-
-        e.g. http://your-host:8087 — combined with the date to form the link.
-        """
-        url = os.environ.get("REPORT_BASE_URL") or self.raw.get("report", {}).get("base_url")
-        return url.rstrip("/") if url else None
+        """How to deliver the brief: html (self-contained document) | text."""
+        return self.raw.get("report", {}).get("delivery", "html")
 
     @property
     def reports_dir(self) -> str:
         return self.raw.get("report", {}).get("reports_dir", "data/reports")
-
-    @property
-    def image_theme(self) -> str:
-        return self.raw.get("report", {}).get("image_theme", "dark")
 
     @property
     def history_days(self) -> int:
