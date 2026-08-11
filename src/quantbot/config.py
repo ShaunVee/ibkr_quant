@@ -78,6 +78,10 @@ class Config:
     def narrative(self) -> dict[str, Any]:
         return self.raw.get("narrative", {})
 
+    @property
+    def benchmark(self) -> dict[str, Any]:
+        return self.raw.get("benchmark", {})
+
     def risk_param(self, key: str, default: Any = None) -> Any:
         return self.risk.get(key, default)
 

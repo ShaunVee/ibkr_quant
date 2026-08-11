@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
+from quantbot.analysis.benchmark import BenchmarkModel
 from quantbot.analysis.changes import FlagChange
 from quantbot.analysis.contribution import ContributionModel
 from quantbot.analysis.diversification import DiversificationModel
@@ -47,6 +48,7 @@ class ReportModel:
     flag_changes: list[FlagChange] = field(default_factory=list)
     diversification: DiversificationModel | None = None
     contribution: ContributionModel | None = None
+    benchmark: BenchmarkModel | None = None
     narrative: str | None = None
 
 
@@ -62,6 +64,7 @@ def build(
     flag_changes: list[FlagChange] | None = None,
     diversification: DiversificationModel | None = None,
     contribution: ContributionModel | None = None,
+    benchmark: BenchmarkModel | None = None,
     today: date | None = None,
 ) -> ReportModel:
     today = today or portfolio.as_of.date()
@@ -103,4 +106,5 @@ def build(
         flag_changes=flag_changes or [],
         diversification=diversification,
         contribution=contribution,
+        benchmark=benchmark,
     )

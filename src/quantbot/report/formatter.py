@@ -189,6 +189,32 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
                                 f"of risk on {_fmt_pct(top.weight * 100, 0)} weight."))
         out.append(("blank", ""))
 
+    # --- Benchmark-relative (analysis #5) ---
+    bm = model.benchmark
+    if bm is not None:
+        out.append(("h2", f"vs {bm.symbol}"))
+        if bm.windows:
+            excess = "  ·  ".join(f"{w.label} {_signed_pct(w.excess_pct)}" for w in bm.windows)
+            out.append(("line", f"Excess: {excess}"))
+        stat_bits = []
+        if bm.beta is not None:
+            r2 = f" (R² {_fmt_num(bm.r_squared, 2)})" if bm.r_squared is not None else ""
+            stat_bits.append(f"Beta {_fmt_num(bm.beta, 2)}{r2}")
+        if bm.alpha_annual_pct is not None:
+            stat_bits.append(f"alpha {_signed_pct(bm.alpha_annual_pct)}/yr")
+        if bm.tracking_error_pct is not None:
+            stat_bits.append(f"tracking error {_fmt_pct(bm.tracking_error_pct)}")
+        if stat_bits:
+            out.append(("line", "  ·  ".join(stat_bits)))
+        if bm.up_capture is not None and bm.down_capture is not None:
+            out.append(("line", f"Capture: up {_fmt_pct(bm.up_capture * 100, 0)}  ·  "
+                                f"down {_fmt_pct(bm.down_capture * 100, 0)}"))
+        for dr in bm.drifts:
+            out.append(("line", f"Drift: {dr.symbol} {_fmt_pct(dr.weight * 100, 0)} vs "
+                                f"{_fmt_pct(dr.target * 100, 0)} target "
+                                f"({_signed_pct(dr.drift * 100, 0)})"))
+        out.append(("blank", ""))
+
     # --- Flags ---
     out.append(("h2", f"Flags ({len(model.flags)})"))
     if not model.flags:

@@ -346,6 +346,56 @@ def _structure(model: ReportModel) -> str:
   </section>"""
 
 
+def _benchmark(model: ReportModel) -> str:
+    bm = model.benchmark
+    if bm is None:
+        return ""
+
+    tiles = ""
+    if bm.beta is not None:
+        r2 = f"R² {fmt_num(bm.r_squared, 2)}" if bm.r_squared is not None else "market sensitivity"
+        tiles += (f'<div class="tile"><div class="k">Beta vs {escape(bm.symbol)}</div>'
+                  f'<div class="v num">{escape(fmt_num(bm.beta, 2))}</div>'
+                  f'<div class="n">{escape(r2)}</div></div>')
+    if bm.alpha_annual_pct is not None:
+        cls = "pos" if bm.alpha_annual_pct >= 0 else "neg"
+        tiles += (f'<div class="tile"><div class="k">Alpha</div>'
+                  f'<div class="v num {cls}">{escape(signed_pct(bm.alpha_annual_pct))}</div>'
+                  f'<div class="n">annualized</div></div>')
+    if bm.tracking_error_pct is not None:
+        tiles += (f'<div class="tile"><div class="k">Tracking Error</div>'
+                  f'<div class="v num">{escape(fmt_pct(bm.tracking_error_pct))}</div>'
+                  f'<div class="n">annualized</div></div>')
+
+    chips = ""
+    for w in bm.windows:
+        cls = "up" if w.excess_pct >= 0 else "down"
+        chips += (f'<span class="chip {cls}">{escape(w.label)} '
+                  f'{escape(signed_pct(w.excess_pct))} vs {escape(bm.symbol)}</span>')
+    if bm.up_capture is not None and bm.down_capture is not None:
+        chips += (f'<span class="chip">up capture {escape(fmt_pct(bm.up_capture * 100, 0))}</span>'
+                  f'<span class="chip">down capture {escape(fmt_pct(bm.down_capture * 100, 0))}</span>')
+    drivers = f'<div class="drivers">{chips}</div>' if chips else ""
+
+    drift = ""
+    if bm.drifts:
+        rows = "".join(
+            f'<div class="chg ongoing"><span class="lab">drift</span>'
+            f'<span>{escape(d.symbol)} {escape(fmt_pct(d.weight * 100, 0))} vs '
+            f'{escape(fmt_pct(d.target * 100, 0))} target '
+            f'({escape(signed_pct(d.drift * 100, 0))})</span></div>'
+            for d in bm.drifts
+        )
+        drift = f'<div class="chglist">{rows}</div>'
+
+    tiles_block = f'<div class="tiles">{tiles}</div>' if tiles else ""
+    return f"""
+  <section>
+    <div class="sec-head"><h2>vs {escape(bm.symbol)}</h2><span class="rule"></span></div>
+    {tiles_block}{drivers}{drift}
+  </section>"""
+
+
 def _allocation(model: ReportModel) -> str:
     rows = [(p.symbol, (p.weight or 0) * 100) for p in model.positions if (p.weight or 0) > 0]
     if not rows:
@@ -462,6 +512,7 @@ def render_html(model: ReportModel) -> str:
             _today(model),
             _risk(model),
             _structure(model),
+            _benchmark(model),
             _allocation(model),
             _flags(model),
             _holdings(model),

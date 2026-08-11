@@ -26,6 +26,16 @@ providers:
 # Rolling window (calendar days) of daily prices to pull for TA / risk math.
 history_days: 400
 
+# Benchmark for relative performance (alpha / regressed beta / capture). Free via the
+# existing price provider. Optional `targets` = your intended weights (fractions); when
+# set, the brief flags positions that have drifted past `drift_tolerance` from target.
+benchmark:
+  symbol: SPY
+  drift_tolerance: 0.05             # flag drift >= 5 percentage points from target
+  # targets:
+  #   SLV: 0.30
+  #   IBIT: 0.20
+
 # Macro series to report (FRED series IDs).
 macro_series:
   cpi: CPIAUCSL                     # CPI, all urban consumers

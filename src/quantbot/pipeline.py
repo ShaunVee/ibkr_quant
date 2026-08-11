@@ -25,6 +25,7 @@ import pandas as pd
 from quantbot.analysis import changes as changes_mod
 from quantbot.analysis import flags as flags_mod
 from quantbot.analysis import (
+    benchmark,
     contribution,
     covariance,
     diversification,
@@ -125,6 +126,9 @@ def stage_analyze(
     )
     contribution_model = contribution.compute(cov_model, risk_metrics.weights)
 
+    # --- benchmark-relative performance (analysis #5) ---
+    benchmark_model = _benchmark(config, market, store, risk_metrics.weights, price_frames)
+
     store.save_flags(account_id, today, the_flags)             # persist before streaks
     flag_changes = changes_mod.diff(
         the_flags,
@@ -143,6 +147,7 @@ def stage_analyze(
         flag_changes=flag_changes,
         diversification=diversification_model,
         contribution=contribution_model,
+        benchmark=benchmark_model,
         today=today,
     )
 
@@ -160,6 +165,41 @@ def stage_analyze(
         snapshot_date=today,
     )
     return model
+
+
+def _benchmark(
+    config: Config,
+    market: MarketData,
+    store: Store,
+    weights: dict[str, float],
+    price_frames: dict[str, pd.DataFrame],
+):
+    """Fetch the benchmark and compute relative performance. Degrades to None (or
+    drift-only) on any data issue so it never breaks the report."""
+    cfg = config.benchmark
+    symbol = cfg.get("symbol", "SPY")
+    targets = cfg.get("targets") or None
+    if not symbol and not targets:
+        return None
+    try:
+        bench_close = None
+        if symbol:
+            df = market.daily_prices(symbol, config.history_days)
+            if not df.empty:
+                _cache_prices(store, symbol, df)
+                bench_close = df["close"]
+        port_returns = risk.portfolio_return_series(weights, price_frames)
+        return benchmark.compute(
+            port_returns,
+            bench_close if bench_close is not None else pd.Series(dtype="float64"),
+            symbol=symbol or "target",
+            weights=weights,
+            targets=targets,
+            drift_tolerance=float(cfg.get("drift_tolerance", 0.05)),
+        )
+    except Exception as exc:  # noqa: BLE001 - benchmark is optional context
+        log.warning("Benchmark analysis failed (%s); skipping.", exc)
+        return None
 
 
 def _cache_prices(store: Store, symbol: str, df: pd.DataFrame) -> None:
