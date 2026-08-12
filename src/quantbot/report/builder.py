@@ -17,6 +17,7 @@ from quantbot.analysis.fundamental import days_to_earnings
 from quantbot.analysis.macro import MacroSnapshot
 from quantbot.analysis.movement import MoveContext
 from quantbot.analysis.risk import RiskMetrics
+from quantbot.analysis.stress import StressModel
 from quantbot.analysis.trends import TrendModel
 from quantbot.models import Flag, Fundamentals, Portfolio, TechnicalSnapshot
 
@@ -52,6 +53,7 @@ class ReportModel:
     contribution: ContributionModel | None = None
     benchmark: BenchmarkModel | None = None
     events: EventRadar | None = None
+    stress: StressModel | None = None
     trends: TrendModel | None = None
     narrative: str | None = None
 
@@ -70,6 +72,7 @@ def build(
     contribution: ContributionModel | None = None,
     benchmark: BenchmarkModel | None = None,
     events: EventRadar | None = None,
+    stress: StressModel | None = None,
     trends: TrendModel | None = None,
     today: date | None = None,
 ) -> ReportModel:
@@ -114,5 +117,6 @@ def build(
         contribution=contribution,
         benchmark=benchmark,
         events=events,
+        stress=stress,
         trends=trends,
     )

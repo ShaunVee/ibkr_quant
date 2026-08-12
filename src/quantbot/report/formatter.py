@@ -203,6 +203,39 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
             out.append(("line", f"Top sectors: {sec_str}"))
         out.append(("blank", ""))
 
+    # --- Stress test (analysis #6): risk numbers -> dollar impact ---
+    st = model.stress
+    if st is not None:
+        out.append(("h2", "Stress Test"))
+        if st.scenarios:
+            stress_tbl = _Table(
+                headers=["Scenario", "Port%", "P/L"],
+                aligns=["l", "r", "r"],
+                rows=[
+                    [s.label, _signed_pct(s.port_ret_pct), _signed_money(s.pnl)]
+                    for s in st.scenarios
+                ],
+            )
+            out.append(("table", stress_tbl))
+        hist_bits = []
+        if st.worst_day is not None:
+            hist_bits.append(
+                f"worst 1-day {_signed_pct(st.worst_day.ret_pct)} "
+                f"({_signed_money(st.worst_day.pnl)})"
+            )
+        if st.worst_week is not None:
+            hist_bits.append(
+                f"worst 5-day {_signed_pct(st.worst_week.ret_pct)} "
+                f"({_signed_money(st.worst_week.pnl)})"
+            )
+        if hist_bits:
+            out.append(("line", "Historical: " + "  ·  ".join(hist_bits)))
+        if st.cvar_pct is not None:
+            cvar_pnl = f" ({_signed_money(st.cvar_pnl)})" if st.cvar_pnl is not None else ""
+            out.append(("line", f"CVaR 95%: -{_fmt_pct(st.cvar_pct * 100)}{cvar_pnl} "
+                                f"(avg loss on the worst days)"))
+        out.append(("blank", ""))
+
     # --- Structure / diversification (analysis #1) ---
     d = model.diversification
     if d is not None:
@@ -403,12 +436,26 @@ def format_caption(model: ReportModel) -> str:
                f"    ·    Cash  {_fmt_money(model.total_cash, cur)}")
     )
     if model.narrative:
-        text = model.narrative.strip()
-        if len(text) > 380:
-            cut = text.rfind(". ", 0, 380)
-            text = text[: cut + 1] if cut > 120 else text[:377].rstrip() + "…"
-        sentences = "\n".join(escape(s) for s in split_sentences(text))
-        parts.append(f"<blockquote><i>{sentences}</i></blockquote>")
+        # Trim on whole-sentence boundaries so the teaser never cuts mid-sentence. A raw
+        # ". " scan would break on abbreviations ("vs.", "e.g."); split_sentences only
+        # splits when a capital/digit follows, so it keeps them intact.
+        sentences = split_sentences(model.narrative.strip())
+        budget = 380
+        kept: list[str] = []
+        total = 0
+        for s in sentences:
+            if kept and total + len(s) + 1 > budget:
+                break
+            kept.append(s)
+            total += len(s) + 1
+        truncated = len(kept) < len(sentences)
+        if kept and len(kept) == 1 and len(kept[0]) > budget + 20:
+            # A single over-long sentence: hard-cap it so the caption stays bounded.
+            kept[0] = kept[0][: budget - 3].rstrip() + "…"
+        elif truncated and kept:
+            kept[-1] = kept[-1].rstrip() + " …"
+        body = "\n".join(escape(s) for s in kept)
+        parts.append(f"<blockquote><i>{body}</i></blockquote>")
     parts.append("")
     if model.flags:
         counts = {"high": 0, "warn": 0, "info": 0}

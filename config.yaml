@@ -45,6 +45,15 @@ events:
   rate_proxy: TLT                   # bond ETF used as the rates proxy for beta
   rate_beta_threshold: 0.20         # |beta| to the proxy above which a name is rate-sensitive
 
+# Scenario stress test: translate the book's risk into dollar impact under named shocks.
+# Market shocks are applied through the portfolio's beta; the rate shock through its
+# regressed beta to the rate proxy above (events.rate_proxy). Historical worst-day /
+# worst-week and CVaR (expected shortfall) are replayed from the price window already
+# pulled — no new data. Shocks are fractions.
+stress:
+  market_shocks: [-0.05, -0.10]     # e.g. SPY -5% / -10%, beta-scaled to your book
+  rate_shocks: [-0.05]              # a move in the rate proxy (bond selloff = rising rates)
+
 # Macro series to report (FRED series IDs).
 macro_series:
   cpi: CPIAUCSL                     # CPI, all urban consumers

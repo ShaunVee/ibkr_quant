@@ -86,6 +86,10 @@ class Config:
     def events(self) -> dict[str, Any]:
         return self.raw.get("events", {})
 
+    @property
+    def stress(self) -> dict[str, Any]:
+        return self.raw.get("stress", {})
+
     def risk_param(self, key: str, default: Any = None) -> Any:
         return self.risk.get(key, default)
 

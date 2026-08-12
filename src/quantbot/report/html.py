@@ -393,6 +393,58 @@ def _risk(model: ReportModel) -> str:
   </section>"""
 
 
+def _stress_hist_bit(h: object, cur: str) -> str:
+    pnl = f" ({escape(signed_money(h.pnl))})" if h.pnl is not None else ""
+    day = f' <span class="as-of">{escape(h.day.isoformat())}</span>' if h.day is not None else ""
+    return (f'<span>{escape(h.label)} <b class="num neg">{escape(signed_pct(h.ret_pct))}</b>'
+            f'{pnl}{day}</span>')
+
+
+def _stress(model: ReportModel) -> str:
+    st = model.stress
+    if st is None:
+        return ""
+    cur = model.base_currency
+
+    rows = ""
+    for s in st.scenarios:
+        cls = "neg" if s.port_ret_pct < 0 else "pos"
+        pnl = signed_money(s.pnl) if s.pnl is not None else "—"
+        rows += (f'<tr><td class="name">{escape(s.label)}</td>'
+                 f'<td class="r {cls}">{escape(signed_pct(s.port_ret_pct))}</td>'
+                 f'<td class="r {cls}">{escape(pnl)}</td></tr>')
+    table = ""
+    if rows:
+        scen_h = _gl("Scenario", "A hypothetical shock run through this book's own beta — "
+                                 "the modelled move, not a forecast. Rate rows use the "
+                                 "book's beta to the bond-ETF proxy.")
+        table = ('<table class="macro-tbl">'
+                 f'<thead><tr><th>{scen_h}</th><th class="r">Portfolio</th>'
+                 f'<th class="r">P/L</th></tr></thead>'
+                 f'<tbody>{rows}</tbody></table>')
+
+    bits = []
+    if st.worst_day is not None:
+        bits.append(_stress_hist_bit(st.worst_day, cur))
+    if st.worst_week is not None:
+        bits.append(_stress_hist_bit(st.worst_week, cur))
+    if st.cvar_pct is not None:
+        cvar_gl = _gl("CVaR", "Expected shortfall: across the worst ~5% of days, the "
+                              "average loss — how bad a bad day gets, beyond the VaR line.")
+        pnl = f" ({escape(signed_money(st.cvar_pnl))})" if st.cvar_pnl is not None else ""
+        bits.append(f'<span>{cvar_gl} 95% '
+                    f'<b class="num neg">-{escape(fmt_pct(st.cvar_pct * 100))}</b>{pnl}</span>')
+    context = f'<div class="context">{"".join(bits)}</div>' if bits else ""
+
+    if not (table or context):
+        return ""
+    return f"""
+  <section>
+    <div class="sec-head"><h2>Stress Test</h2><span class="rule"></span></div>
+    {table}{context}
+  </section>"""
+
+
 def _structure(model: ReportModel) -> str:
     d = model.diversification
     rc = model.contribution
@@ -689,6 +741,7 @@ def render_html(model: ReportModel) -> str:
             _today(model),
             _trends(model),
             _risk(model),
+            _stress(model),
             _structure(model),
             _benchmark(model),
             _events(model),

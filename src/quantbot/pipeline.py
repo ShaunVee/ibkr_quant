@@ -20,6 +20,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import numpy as np
 import pandas as pd
 
 from quantbot.analysis import changes as changes_mod
@@ -34,6 +35,7 @@ from quantbot.analysis import (
     macro,
     movement,
     risk,
+    stress,
     technical,
     trends,
 )
@@ -140,10 +142,21 @@ def stage_analyze(
     # --- benchmark-relative performance (analysis #5) ---
     benchmark_model = _benchmark(config, market, store, risk_metrics.weights, price_frames)
 
+    # Rate proxy series — fetched once and shared by the event radar (#4) and the stress
+    # test (#6), so a single bond-ETF pull feeds both.
+    rate_proxy_symbol = config.events.get("rate_proxy", "TLT")
+    rate_proxy_close = _rate_proxy_series(config, market, store, rate_proxy_symbol)
+
     # --- event radar (analysis #4): forward calendar + rates exposure ---
     events_model = _events(
-        config, market, store, fundamentals, risk_metrics.weights,
-        price_frames, macro_snapshot, today,
+        config, fundamentals, risk_metrics.weights, price_frames,
+        macro_snapshot, rate_proxy_close, rate_proxy_symbol, today,
+    )
+
+    # --- scenario stress test (analysis #6): risk numbers -> dollar impact ---
+    stress_model = _stress(
+        config, risk_metrics, price_frames, portfolio.invested_value,
+        rate_proxy_close, rate_proxy_symbol,
     )
 
     store.save_flags(account_id, today, the_flags)             # persist before streaks
@@ -185,6 +198,7 @@ def stage_analyze(
         contribution=contribution_model,
         benchmark=benchmark_model,
         events=events_model,
+        stress=stress_model,
         trends=trend_model,
         today=today,
     )
@@ -226,41 +240,87 @@ def _benchmark(
         return None
 
 
+def _rate_proxy_series(
+    config: Config, market: MarketData, store: Store, symbol: str
+) -> pd.Series | None:
+    """Fetch the rates-proxy (bond ETF) close series once. Cached to SQLite and shared by
+    the event radar and the stress test. Degrades to None on any issue."""
+    if not symbol:
+        return None
+    try:
+        df = market.daily_prices(symbol, config.history_days)
+        if df.empty:
+            return None
+        _cache_prices(store, symbol, df)
+        return df["close"]
+    except Exception as exc:  # noqa: BLE001 - rate proxy is optional context
+        log.warning("Rate proxy fetch failed (%s); skipping rate-sensitive analyses.", exc)
+        return None
+
+
 def _events(
     config: Config,
-    market: MarketData,
-    store: Store,
     fundamentals,
     weights: dict[str, float],
     price_frames: dict[str, pd.DataFrame],
     macro_snapshot,
+    rate_proxy_close: pd.Series | None,
+    rate_proxy: str,
     today: date,
 ):
-    """Assemble the forward event radar. The only new fetch is the rates-proxy price
-    series; everything else reuses data already gathered. Degrades to None on any issue."""
+    """Assemble the forward event radar. Reuses data already gathered (the rate proxy is
+    fetched once by the caller). Degrades to None on any issue."""
     cfg = config.events
     horizon = int(cfg.get("horizon_days", 14))
-    proxy = cfg.get("rate_proxy", "TLT")
     try:
-        proxy_close = None
-        if proxy:
-            df = market.daily_prices(proxy, config.history_days)
-            if not df.empty:
-                _cache_prices(store, proxy, df)
-                proxy_close = df["close"]
         return events_mod.compute(
             fundamentals,
             weights,
             macro_events=macro_snapshot.events if macro_snapshot else None,
             price_frames=price_frames,
-            rate_proxy_close=proxy_close,
-            rate_proxy=proxy or "TLT",
+            rate_proxy_close=rate_proxy_close,
+            rate_proxy=rate_proxy or "TLT",
             horizon_days=horizon,
             rate_beta_threshold=float(cfg.get("rate_beta_threshold", 0.20)),
             today=today,
         )
     except Exception as exc:  # noqa: BLE001 - event radar is optional context
         log.warning("Event radar failed (%s); skipping.", exc)
+        return None
+
+
+def _stress(
+    config: Config,
+    risk_metrics,
+    price_frames: dict[str, pd.DataFrame],
+    invested_value: float,
+    rate_proxy_close: pd.Series | None,
+    rate_proxy: str,
+):
+    """Size the book's downside under named shocks + its own worst history. Reuses the
+    beta, return series and rate proxy already in hand. Degrades to None on any issue."""
+    cfg = config.stress
+    market_shocks = [float(s) for s in cfg.get("market_shocks", [-0.05, -0.10])]
+    rate_shocks = [float(s) for s in cfg.get("rate_shocks", [-0.05])]
+    try:
+        port_returns = risk.portfolio_return_series(risk_metrics.weights, price_frames)
+        proxy_returns = None
+        if rate_proxy_close is not None and not rate_proxy_close.empty:
+            proxy_returns = (
+                rate_proxy_close.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+            )
+        return stress.compute(
+            port_returns,
+            beta=risk_metrics.portfolio_beta,
+            invested_value=invested_value,
+            market_shocks=market_shocks,
+            rate_proxy_returns=proxy_returns,
+            rate_proxy=rate_proxy,
+            rate_shocks=rate_shocks,
+            var_confidence=float(config.risk_param("var_confidence", 0.95)),
+        )
+    except Exception as exc:  # noqa: BLE001 - stress test is optional context
+        log.warning("Stress test failed (%s); skipping.", exc)
         return None
 
 
