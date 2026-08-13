@@ -119,6 +119,21 @@ class TechnicalSnapshot:
     ret_1m: float | None = None
     ret_3m: float | None = None
     ret_6m: float | None = None
+    obv: float | None = None               # On-Balance Volume (cumulative)
+    obv_trend: str | None = None           # "rising" | "falling" (EMA cross of OBV)
+
+
+@dataclass(slots=True)
+class TechnicalSignal:
+    """A distilled technical read for one holding — a short tag, not a raw number.
+
+    tone drives display colour: bull (green), bear (red), warn (amber caution),
+    neutral (plain). code is stable for tests; label is the human-facing chip text.
+    """
+
+    code: str          # e.g. TREND_UP, MACD_BULL, RSI_OVERBOUGHT, OBV_RISING
+    label: str         # e.g. "uptrend", "MACD+", "overbought", "OBV rising"
+    tone: str          # bull | bear | warn | neutral
 
 
 @dataclass(slots=True)

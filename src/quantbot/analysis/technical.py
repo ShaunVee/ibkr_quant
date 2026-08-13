@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from quantbot.models import TechnicalSnapshot
+from quantbot.models import TechnicalSignal, TechnicalSnapshot
 
 TRADING_DAYS_YEAR = 252
 
@@ -78,6 +78,32 @@ def atr(df: pd.DataFrame, period: int = 14) -> float | None:
     return float(tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean().iloc[-1])
 
 
+def obv(df: pd.DataFrame, fast: int = 10, slow: int = 30) -> tuple[float | None, str | None]:
+    """On-Balance Volume and its trend.
+
+    OBV adds the day's volume on up-days and subtracts it on down-days — a running
+    tally of whether volume is flowing into or out of the name (accumulation vs
+    distribution). The absolute level is arbitrary, so the trend is what matters: we
+    classify it by an EMA cross of the OBV line itself (fast above slow = rising).
+    """
+    if "close" not in df.columns or "volume" not in df.columns:
+        return None, None
+    close = df["close"]
+    vol = df["volume"]
+    if len(close) < 2:
+        return None, None
+    direction = np.sign(close.diff().fillna(0.0))
+    obv_series = (direction * vol.fillna(0.0)).cumsum()
+    last = float(obv_series.iloc[-1])
+    if len(obv_series) < slow:
+        return last, None
+    ema_fast = obv_series.ewm(span=fast, adjust=False).mean().iloc[-1]
+    ema_slow = obv_series.ewm(span=slow, adjust=False).mean().iloc[-1]
+    if pd.isna(ema_fast) or pd.isna(ema_slow) or ema_fast == ema_slow:
+        return last, None
+    return last, ("rising" if ema_fast > ema_slow else "falling")
+
+
 def _pct_return(close: pd.Series, lookback: int) -> float | None:
     if len(close) <= lookback:
         return None
@@ -118,7 +144,72 @@ def compute(symbol: str, df: pd.DataFrame) -> TechnicalSnapshot:
     snap.ret_1m = _pct_return(close, 21)
     snap.ret_3m = _pct_return(close, 63)
     snap.ret_6m = _pct_return(close, 126)
+    snap.obv, snap.obv_trend = obv(df)
     return snap
+
+
+# Thresholds for the Bollinger / 52-week "extreme" signals. Only surface these tags
+# when a name is genuinely near an edge, so the summary stays signal-rich, not noisy.
+_BOLL_UPPER = 0.95
+_BOLL_LOWER = 0.05
+_NEAR_52W_HIGH_PCT = -2.0   # within 2% below the 52w high
+_NEAR_52W_LOW_PCT = 2.0     # within 2% above the 52w low
+
+
+def derive_signals(
+    snap: TechnicalSnapshot,
+    *,
+    rsi_overbought: float = 70.0,
+    rsi_oversold: float = 30.0,
+) -> list[TechnicalSignal]:
+    """Distil a snapshot into a short list of technical signal tags for the brief.
+
+    "Signal summary only": emit a tag when a read is meaningful (trend direction,
+    MACD posture, OBV flow always; RSI / Bollinger / 52w only at their extremes) and
+    stay silent otherwise. Deterministic and threshold-driven so it's unit-testable.
+    """
+    out: list[TechnicalSignal] = []
+
+    # Trend structure — 50d vs 200d (golden/death cross state).
+    if snap.golden_cross is True:
+        out.append(TechnicalSignal("TREND_UP", "uptrend 50>200", "bull"))
+    elif snap.golden_cross is False:
+        out.append(TechnicalSignal("TREND_DOWN", "downtrend 50<200", "bear"))
+
+    # MACD posture — line vs signal.
+    if snap.macd is not None and snap.macd_signal is not None:
+        if snap.macd >= snap.macd_signal:
+            out.append(TechnicalSignal("MACD_BULL", "MACD+", "bull"))
+        else:
+            out.append(TechnicalSignal("MACD_BEAR", "MACD−", "bear"))
+
+    # RSI — only at extremes.
+    if snap.rsi14 is not None:
+        if snap.rsi14 >= rsi_overbought:
+            out.append(TechnicalSignal("RSI_OVERBOUGHT", "overbought", "warn"))
+        elif snap.rsi14 <= rsi_oversold:
+            out.append(TechnicalSignal("RSI_OVERSOLD", "oversold", "warn"))
+
+    # Bollinger band position — only when riding an edge.
+    if snap.bollinger_pct is not None:
+        if snap.bollinger_pct >= _BOLL_UPPER:
+            out.append(TechnicalSignal("BB_UPPER", "at upper band", "warn"))
+        elif snap.bollinger_pct <= _BOLL_LOWER:
+            out.append(TechnicalSignal("BB_LOWER", "at lower band", "warn"))
+
+    # 52-week range — only when near an edge.
+    if snap.pct_from_52w_high is not None and snap.pct_from_52w_high >= _NEAR_52W_HIGH_PCT:
+        out.append(TechnicalSignal("NEAR_52W_HIGH", "near 52w high", "bull"))
+    elif snap.pct_from_52w_low is not None and snap.pct_from_52w_low <= _NEAR_52W_LOW_PCT:
+        out.append(TechnicalSignal("NEAR_52W_LOW", "near 52w low", "bear"))
+
+    # OBV — volume flow (accumulation vs distribution).
+    if snap.obv_trend == "rising":
+        out.append(TechnicalSignal("OBV_RISING", "OBV rising", "bull"))
+    elif snap.obv_trend == "falling":
+        out.append(TechnicalSignal("OBV_FALLING", "OBV falling", "bear"))
+
+    return out
 
 
 def daily_returns(close: pd.Series) -> pd.Series:

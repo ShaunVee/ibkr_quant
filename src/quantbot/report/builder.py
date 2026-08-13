@@ -19,7 +19,8 @@ from quantbot.analysis.movement import MoveContext
 from quantbot.analysis.risk import RiskMetrics
 from quantbot.analysis.stress import StressModel
 from quantbot.analysis.trends import TrendModel
-from quantbot.models import Flag, Fundamentals, Portfolio, TechnicalSnapshot
+from quantbot.analysis import technical
+from quantbot.models import Flag, Fundamentals, Portfolio, TechnicalSignal, TechnicalSnapshot
 
 
 @dataclass(slots=True)
@@ -33,6 +34,7 @@ class PositionRow:
     ret_1m: float | None
     days_to_earnings: int | None
     sector: str | None
+    signals: list[TechnicalSignal] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -75,6 +77,8 @@ def build(
     stress: StressModel | None = None,
     trends: TrendModel | None = None,
     today: date | None = None,
+    rsi_overbought: float = 70.0,
+    rsi_oversold: float = 30.0,
 ) -> ReportModel:
     today = today or portfolio.as_of.date()
     weights = risk.weights if risk else {}
@@ -96,6 +100,9 @@ def build(
                 ret_1m=tech.ret_1m,
                 days_to_earnings=days_to_earnings(fund, today),
                 sector=fund.sector,
+                signals=technical.derive_signals(
+                    tech, rsi_overbought=rsi_overbought, rsi_oversold=rsi_oversold
+                ),
             )
         )
     rows.sort(key=lambda r: -(r.market_value or 0.0))

@@ -201,6 +201,8 @@ def stage_analyze(
         stress=stress_model,
         trends=trend_model,
         today=today,
+        rsi_overbought=float(config.risk_param("rsi_overbought", 70.0)),
+        rsi_oversold=float(config.risk_param("rsi_oversold", 30.0)),
     )
     return model
 

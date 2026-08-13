@@ -134,6 +134,7 @@ section{margin-bottom:30px;}
   border:1px solid var(--border);padding:2px 8px;border-radius:6px;}
 .chip.up{color:var(--pos);border-color:color-mix(in srgb,var(--pos) 30%,var(--border));}
 .chip.down{color:var(--neg);border-color:color-mix(in srgb,var(--neg) 30%,var(--border));}
+.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,var(--border));}
 .macro-tbl{width:100%;border-collapse:collapse;font-size:14px;}
 .macro-tbl th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600;padding:0 12px 8px;}
 .macro-tbl th.r,.macro-tbl td.r{text-align:right;}
@@ -665,6 +666,10 @@ def _flags(model: ReportModel) -> str:
   </section>"""
 
 
+# Technical-signal tone -> chip colour class (see analysis.technical.derive_signals).
+_SIGNAL_TONE_CLASS = {"bull": "up", "bear": "down", "warn": "warn", "neutral": ""}
+
+
 def _holdings(model: ReportModel) -> str:
     if not model.positions:
         return ""
@@ -685,6 +690,9 @@ def _holdings(model: ReportModel) -> str:
         if p.ret_1m is not None:
             cls = "up" if p.ret_1m >= 0 else "down"
             chips.append(f'<span class="chip {cls}">1m {escape(signed_pct(p.ret_1m))}</span>')
+        for sig in p.signals:
+            cls = _SIGNAL_TONE_CLASS.get(sig.tone, "")
+            chips.append(f'<span class="chip {cls}">{escape(sig.label)}</span>')
         if p.days_to_earnings is not None and p.days_to_earnings >= 0:
             chips.append(f'<span class="chip">earnings {p.days_to_earnings}d</span>')
         cards.append(f"""

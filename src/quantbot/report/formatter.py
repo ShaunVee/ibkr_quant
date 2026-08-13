@@ -361,9 +361,9 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
         ],
     )
     out.append(("table", holdings))
-    # PE / earnings are sparse — keep them as compact footnotes, not table columns.
+    # Signal tags + sparse PE/earnings live as compact footnotes, not table columns.
     for p in model.positions:
-        notes = []
+        notes = [s.label for s in p.signals]
         if p.pe is not None:
             notes.append(f"PE {_fmt_num(p.pe)}")
         if p.days_to_earnings is not None and p.days_to_earnings >= 0:

@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from quantbot.analysis import technical
+from quantbot.models import TechnicalSnapshot
 
 
 def test_sma_simple():
@@ -65,3 +66,65 @@ def test_compute_snapshot_fields():
 def test_compute_empty_frame_is_safe():
     snap = technical.compute("TEST", pd.DataFrame())
     assert snap.last_price is None
+
+
+def test_obv_rising_when_price_and_volume_climb():
+    # Strictly rising closes -> every day adds volume -> OBV monotonically increases.
+    n = 40
+    df = pd.DataFrame(
+        {
+            "close": np.arange(1, n + 1, dtype="float64"),
+            "volume": np.full(n, 1_000.0),
+        }
+    )
+    last, trend = technical.obv(df)
+    assert last == pytest.approx(1_000.0 * (n - 1))  # first diff is NaN->0, rest add
+    assert trend == "rising"
+
+
+def test_obv_falling_when_price_declines():
+    n = 40
+    df = pd.DataFrame(
+        {
+            "close": np.arange(n, 0, -1, dtype="float64"),
+            "volume": np.full(n, 1_000.0),
+        }
+    )
+    _, trend = technical.obv(df)
+    assert trend == "falling"
+
+
+def test_obv_missing_volume_is_safe():
+    df = pd.DataFrame({"close": [1.0, 2.0, 3.0]})
+    assert technical.obv(df) == (None, None)
+
+
+def test_derive_signals_trend_macd_obv():
+    snap = TechnicalSnapshot(
+        symbol="X",
+        golden_cross=True,
+        macd=1.0,
+        macd_signal=0.5,
+        rsi14=50.0,            # neutral -> no RSI tag
+        bollinger_pct=0.5,     # mid -> no BB tag
+        obv_trend="rising",
+    )
+    codes = {s.code for s in technical.derive_signals(snap)}
+    assert {"TREND_UP", "MACD_BULL", "OBV_RISING"} <= codes
+    assert not {"RSI_OVERBOUGHT", "RSI_OVERSOLD", "BB_UPPER", "BB_LOWER"} & codes
+
+
+def test_derive_signals_rsi_extremes_respect_thresholds():
+    hot = TechnicalSnapshot(symbol="X", rsi14=75.0)
+    cold = TechnicalSnapshot(symbol="X", rsi14=25.0)
+    assert any(s.code == "RSI_OVERBOUGHT" for s in technical.derive_signals(hot))
+    assert any(s.code == "RSI_OVERSOLD" for s in technical.derive_signals(cold))
+    # Custom thresholds shift the boundary.
+    assert not any(
+        s.code == "RSI_OVERBOUGHT"
+        for s in technical.derive_signals(hot, rsi_overbought=80.0)
+    )
+
+
+def test_derive_signals_empty_snapshot_is_silent():
+    assert technical.derive_signals(TechnicalSnapshot(symbol="X")) == []
