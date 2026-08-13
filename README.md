@@ -25,8 +25,18 @@ sends a brief to Telegram. Built to expand to other brokers later.
 
 ## Status
 
-Full pipeline implemented end-to-end: ingest → store → analyze → report → deliver,
-with 93 passing unit tests. Fill in `.env`, then:
+**Live in production.** Deployed on the VPS as a long-lived container (see [Deploy](#deploy-vps))
+and sending scheduled morning briefs — 07:00 Asia/Singapore, Mon–Fri — to Telegram, plus
+on-demand `/report`. Real IBKR Flex ingest, market data, Claude narrative, and Telegram
+HTML-document delivery are all confirmed working against live credentials.
+
+> **Note for anyone (or any agent) inspecting a local checkout:** production runs on the VPS,
+> not from this working copy. Local `data/portfolio.db` and `data/reports/` are dev leftovers
+> and are **not** evidence of production state — do not infer that the bot "hasn't run" from
+> them. Check the VPS container / its logs instead.
+
+Full pipeline end-to-end (ingest → store → analyze → report → deliver) with a passing unit
+suite (`pytest -q`). To run the pipeline locally against your own `.env`:
 
 - `python -m quantbot.pipeline --stage ingest` — pull + print holdings (verifies Flex).
 - `python -m quantbot.pipeline --dry-run` — full run, prints the report, no Telegram.
