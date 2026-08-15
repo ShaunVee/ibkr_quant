@@ -26,7 +26,7 @@ sends a brief to Telegram. Built to expand to other brokers later.
 ## Status
 
 **Live in production.** Deployed on the VPS as a long-lived container (see [Deploy](#deploy-vps))
-and sending scheduled morning briefs — 07:00 Asia/Singapore, Mon–Fri — to Telegram, plus
+and sending scheduled morning briefs — 07:00 Asia/Singapore, Tue–Sat — to Telegram, plus
 on-demand `/report`. Real IBKR Flex ingest, market data, Claude narrative, and Telegram
 HTML-document delivery are all confirmed working against live credentials.
 
@@ -85,7 +85,7 @@ pytest -q                                       # tests
 One long-lived container that runs the **service** ([src/quantbot/service.py](src/quantbot/service.py)) —
 no host cron or systemd. It does two things at once:
 
-- **Scheduled:** fires the pipeline at **07:00 Asia/Singapore, Mon–Fri**.
+- **Scheduled:** fires the pipeline at **07:00 Asia/Singapore, Tue–Sat** (each brief caps the prior US session; Sat covers Fri's close, then the next run is Tue).
 - **On demand:** listens on Telegram — send **`/report`** any time to run the brief now
   (also `/status` for the next run + state, `/help`). An on-demand `/report` streams live
   stage progress back to the chat (“📥 Pulling… → 📊 Crunching… → 📤 Delivering… → ✅”), so

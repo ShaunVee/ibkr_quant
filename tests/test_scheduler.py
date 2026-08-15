@@ -1,4 +1,9 @@
-"""The cron trigger fires when we expect: 07:00 SGT on weekdays only."""
+"""The cron trigger fires when we expect: 07:00 SGT, Tue-Sat.
+
+Each brief reports the prior US session, so the run week is shifted one day past the
+US trading week: Sat caps off Friday's close, then Sun/Mon are dark and the next run
+is Tuesday.
+"""
 
 from __future__ import annotations
 
@@ -45,19 +50,25 @@ def test_skips_to_next_day_after_seven():
     assert (got.month, got.day, got.hour) == (8, 13, 7)
 
 
-def test_weekend_rolls_to_monday():
-    # Friday after the fire, and Saturday, both land on Monday 07:00.
-    monday = (8, 17, 7)
-    assert (
-        _next(datetime(2026, 8, 14, 8, 0, tzinfo=SGT)).month,
-        _next(datetime(2026, 8, 14, 8, 0, tzinfo=SGT)).day,
-        _next(datetime(2026, 8, 14, 8, 0, tzinfo=SGT)).hour,
-    ) == monday
+def test_friday_after_fire_rolls_to_saturday():
+    # Friday 08:00 -> Saturday 07:00 (Sat caps off the week).
+    got = _next(datetime(2026, 8, 14, 8, 0, tzinfo=SGT))
+    assert (got.month, got.day, got.hour) == (8, 15, 7)
+
+
+def test_saturday_after_fire_rolls_to_tuesday():
+    # Saturday and Sunday both land on Tuesday 07:00 — Sun/Mon are dark.
+    tuesday = (8, 18, 7)
     assert (
         _next(datetime(2026, 8, 15, 12, 0, tzinfo=SGT)).month,
         _next(datetime(2026, 8, 15, 12, 0, tzinfo=SGT)).day,
         _next(datetime(2026, 8, 15, 12, 0, tzinfo=SGT)).hour,
-    ) == monday
+    ) == tuesday
+    assert (
+        _next(datetime(2026, 8, 16, 12, 0, tzinfo=SGT)).month,
+        _next(datetime(2026, 8, 16, 12, 0, tzinfo=SGT)).day,
+        _next(datetime(2026, 8, 16, 12, 0, tzinfo=SGT)).hour,
+    ) == tuesday
 
 
 def test_env_overrides_time(monkeypatch):

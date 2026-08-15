@@ -1,6 +1,7 @@
 # quantbot on a VPS. The container stays up running the service
-# (src/quantbot/service.py): a scheduler that fires the pipeline every weekday morning
-# at 07:00 Asia/Singapore, PLUS a Telegram listener so you can trigger a run any time
+# (src/quantbot/service.py): a scheduler that fires the pipeline every Tue-Sat morning
+# at 07:00 Asia/Singapore (each run caps the prior US session), PLUS a Telegram listener
+# so you can trigger a run any time
 # by sending /report. Deployment is a one-liner and needs no host cron/systemd:
 #
 #   Deploy / update:  docker compose -f deploy/docker-compose.yml up -d --build
