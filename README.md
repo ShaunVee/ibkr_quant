@@ -23,6 +23,33 @@ sends a brief to Telegram. Built to expand to other brokers later.
 - **"Recommendations":** rule-based **risk flags** (concentration, high beta, RSI
   extremes, earnings-soon, drawdown) — what to look at, not buy/sell calls.
 
+## Analyses
+
+Each is a self-contained module in `analysis/` that degrades gracefully — a failed data
+provider drops its section rather than the run. All numbers are computed here; the
+narrative only summarizes them.
+
+1. **Diversification structure** — *"your book is secretly one bet"*: effective number of
+   bets, top-factor share of variance, and correlated clusters hiding on the positions screen.
+2. **Risk contribution** — *"risk is not weight"*: each name's share of portfolio risk vs its
+   weight, so an outsized risk driver is visible even at a modest weight.
+3. **Move context** — *"is this even notable?"*: today's move z-scored against the book's own
+   trailing volatility and attributed to the names that drove it.
+4. **Event radar** — forward earnings + macro calendar (CPI/FOMC) weighted by your exposure,
+   plus a rate-sensitivity read — the risk you're walking into blind.
+5. **Benchmark-relative** — excess return over windows, regressed beta / annualized alpha / R²,
+   up/down capture, and drift from your target weights (a rebalance cue).
+6. **Scenario stress test** — the book's risk in dollars: modelled loss under named market/rate
+   shocks, its worst historical day/week, and CVaR (expected shortfall).
+7. **Driver attribution** — *why* each notable mover moved: the move split into what its theme
+   (silver, bitcoin, comm-services, …; broad-market fallback) explains via beta vs a
+   name-specific residual, classified systematic / mixed / idiosyncratic. For abnormal
+   single-stock movers, recent headlines are attached as *possible, unconfirmed* catalysts.
+   The theme map is tunable in `config.yaml` (`drivers.map`).
+
+Plus a **history & trends** readout — how account value, beta, vol, concentration and flags
+have drifted over the recorded snapshot window (IBKR is stateless; the daily snapshots aren't).
+
 ## Status
 
 **Live in production.** Deployed on the VPS as a long-lived container (see [Deploy](#deploy-vps))
