@@ -25,6 +25,15 @@ _SYSTEM = (
     "Changed' sections. Say if the move was within normal range or unusual (the sigma), "
     "and name what drove it. Call out newly-triggered and cleared flags before anything "
     "static. Demote unchanged posture and standing figures to supporting detail.\n"
+    "EXPLAIN WHY the movers moved using the 'Why:' driver-attribution lines under Today. "
+    "Each mover is split into what its theme (a reference index/commodity — e.g. silver, "
+    "bitcoin, comm-services) explains via beta, versus a name-specific residual. Say whether "
+    "a move was mostly the theme (systematic — 'the whole silver complex rose, SLV rode it') "
+    "or name-specific (idiosyncratic — 'the sector was flat but this name fell on its own'). "
+    "This is the answer to 'why', so give it real space. If a '↳' catalyst headline is "
+    "present, you MAY mention it as a POSSIBLE, UNCONFIRMED catalyst for an idiosyncratic "
+    "move — never state it as established cause, and never let it override the attribution "
+    "math. Do not attach headlines to moves the theme already explains.\n"
     "When the report shows hidden concentration — few effective bets, a high top-factor "
     "share, a correlated cluster, or a name whose risk share far exceeds its weight — "
     "surface it: it is exactly what the owner can't see on a positions screen.\n"
@@ -39,7 +48,8 @@ _SYSTEM = (
     "under a market shock and/or the book's worst historical day, so the owner feels the "
     "downside in currency, not just in beta and vol. Present it as sizing, not a forecast.\n\n"
     "STRICT RULES:\n"
-    "- Use ONLY numbers present in the provided report. Never invent or estimate figures.\n"
+    "- Use ONLY numbers, themes, and headlines present in the provided report. Never invent "
+    "or estimate figures, and never introduce a cause or headline not in the report.\n"
     "- Do NOT give buy/sell/hold advice or price predictions. Surface risks to look at.\n"
     "- Be factual and calm. No hype. Plain prose, no markdown headers.\n"
 )
@@ -106,6 +116,18 @@ def _fallback(model: ReportModel) -> str:
                 f"{m.symbol} {m.contribution_pp:+.1f}pp" for m in mv.top_contributors[:2]
             )
         parts.append(move + ".")
+
+    dv = model.drivers
+    if dv is not None and dv.attributions:
+        whys = []
+        for a in dv.attributions[:2]:
+            if a.theme and a.kind in ("systematic", "mixed", "idiosyncratic"):
+                if a.kind == "idiosyncratic":
+                    whys.append(f"{a.symbol}'s move was name-specific")
+                else:
+                    whys.append(f"{a.symbol} tracked {a.theme} ({a.driver_ret_pct:+.1f}%)")
+        if whys:
+            parts.append("Why: " + "; ".join(whys) + ".")
 
     new = [c for c in model.flag_changes if c.status == "new"]
     cleared = [c for c in model.flag_changes if c.status == "cleared"]

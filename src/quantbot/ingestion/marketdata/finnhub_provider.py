@@ -7,14 +7,18 @@ methods degrade to empty results on failure so the report still generates.
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
-from quantbot.ingestion.marketdata.base import EarningsProvider, EconCalendarProvider
+from quantbot.ingestion.marketdata.base import (
+    EarningsProvider,
+    EconCalendarProvider,
+    NewsProvider,
+)
 
 log = logging.getLogger(__name__)
 
 
-class FinnhubProvider(EarningsProvider, EconCalendarProvider):
+class FinnhubProvider(EarningsProvider, EconCalendarProvider, NewsProvider):
     def __init__(self, api_key: str) -> None:
         import finnhub  # lazy import
 
@@ -70,6 +74,41 @@ class FinnhubProvider(EarningsProvider, EconCalendarProvider):
                     }
                 )
         out.sort(key=lambda x: x["date"])
+        return out
+
+    def company_news(self, symbol: str, days_back: int = 5) -> list[dict]:
+        today = date.today()
+        try:
+            resp = self._client.company_news(
+                symbol,
+                _from=(today - timedelta(days=days_back)).isoformat(),
+                to=today.isoformat(),
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.info("Finnhub company news fetch skipped for %s: %s", symbol, exc)
+            return []
+
+        out = []
+        for item in resp or []:
+            ts = item.get("datetime")
+            when = None
+            if ts:
+                try:
+                    when = datetime.fromtimestamp(int(ts), tz=timezone.utc).date()
+                except (ValueError, OSError, OverflowError):
+                    when = None
+            headline = (item.get("headline") or "").strip()
+            if not headline:
+                continue
+            out.append(
+                {
+                    "date": when.isoformat() if when else None,
+                    "headline": headline,
+                    "source": item.get("source"),
+                    "url": item.get("url"),
+                }
+            )
+        # Finnhub returns newest-first already; keep that order.
         return out
 
 

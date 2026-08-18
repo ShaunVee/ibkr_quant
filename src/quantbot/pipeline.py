@@ -30,6 +30,7 @@ from quantbot.analysis import (
     contribution,
     covariance,
     diversification,
+    drivers as drivers_mod,
     events as events_mod,
     fundamental,
     macro,
@@ -130,6 +131,9 @@ def stage_analyze(
         price_frames, risk_metrics.weights, prior_weights=prior_weights or None
     )
 
+    # --- driver attribution (#7): why did each notable mover move? theme vs name-specific ---
+    drivers_model = _drivers(config, market, store, moves, price_frames, fundamentals)
+
     # --- structure layer (A): correlation/covariance-derived analyses ---
     cov_model = covariance.build(price_frames)
     diversification_model = diversification.compute(
@@ -193,6 +197,7 @@ def stage_analyze(
         macro_snapshot,
         the_flags,
         moves=moves,
+        drivers=drivers_model,
         flag_changes=flag_changes,
         diversification=diversification_model,
         contribution=contribution_model,
@@ -240,6 +245,80 @@ def _benchmark(
     except Exception as exc:  # noqa: BLE001 - benchmark is optional context
         log.warning("Benchmark analysis failed (%s); skipping.", exc)
         return None
+
+
+def _drivers(
+    config: Config,
+    market: MarketData,
+    store: Store,
+    moves,
+    price_frames: dict[str, pd.DataFrame],
+    fundamentals,
+):
+    """Attribute today's notable movers to their themes + attach catalyst headlines.
+
+    Fetches only the handful of theme tickers the movers actually need (free via the price
+    provider, cached like every other series). Degrades to None on any issue so it never
+    breaks the report."""
+    cfg = config.drivers
+    driver_map = {k.upper(): v for k, v in (cfg.get("map") or {}).items()}
+    default_driver = cfg.get("default")
+    if not driver_map and not default_driver:
+        return None
+    try:
+        tickers = drivers_mod.needed_driver_tickers(
+            moves, driver_map, default_driver,
+            max_movers=int(cfg.get("max_movers", 5)),
+        )
+        driver_frames: dict[str, pd.DataFrame] = {}
+        for ticker in tickers:
+            if ticker in price_frames:            # already held — reuse the pulled series
+                driver_frames[ticker] = price_frames[ticker]
+                continue
+            df = market.daily_prices(ticker, config.history_days)
+            if not df.empty:
+                _cache_prices(store, ticker, df)
+                driver_frames[ticker] = df
+
+        news_fn = None
+        if config.providers.get("market_data", {}).get("news"):
+            news_fn = lambda sym: _catalysts(market, sym)  # noqa: E731
+
+        return drivers_mod.compute(
+            moves, price_frames, driver_frames, driver_map, default_driver,
+            fundamentals=fundamentals, news_fn=news_fn,
+            max_movers=int(cfg.get("max_movers", 5)),
+        )
+    except Exception as exc:  # noqa: BLE001 - driver attribution is optional context
+        log.warning("Driver attribution failed (%s); skipping.", exc)
+        return None
+
+
+def _catalysts(market: MarketData, symbol: str, limit: int = 2):
+    """Map raw provider headlines to Catalyst records for one abnormal mover."""
+    today = date.today()
+    out = []
+    for item in market.company_news(symbol, days_back=5)[:limit]:
+        when = None
+        days_ago = None
+        raw = item.get("date")
+        if raw:
+            try:
+                when = date.fromisoformat(raw)
+                days_ago = (today - when).days
+            except ValueError:
+                when = None
+        out.append(
+            drivers_mod.Catalyst(
+                symbol=symbol,
+                headline=item.get("headline", ""),
+                source=item.get("source"),
+                url=item.get("url"),
+                when=when,
+                days_ago=days_ago,
+            )
+        )
+    return out
 
 
 def _rate_proxy_series(

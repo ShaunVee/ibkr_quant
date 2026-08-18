@@ -101,6 +101,30 @@ def _trend_metric(md: "object") -> tuple[str, str, str]:
     return key.replace("_", " ").title(), _fmt_num(start), _fmt_num(end)
 
 
+_KIND_PHRASE = {
+    "systematic": "mostly the theme",
+    "idiosyncratic": "name-specific",
+    "mixed": "theme + name",
+}
+
+
+def _attribution_line(a: "object") -> str | None:
+    """One-liner for a driver attribution, e.g.
+    'SLV +3.1% — silver +2.8% (β1.02) → mostly the theme (residual +0.2pp)'.
+
+    Falls back to a bare 'no theme reference' note when the regression couldn't run."""
+    head = f"{a.symbol} {_signed_pct(a.ret_pct)}"
+    if not a.theme or a.explained_pct is None or a.driver_ret_pct is None:
+        return f"{head} — no theme reference available" if a.symbol else None
+    beta = f"β{_fmt_num(a.beta, 2)}" if a.beta is not None else ""
+    phrase = _KIND_PHRASE.get(a.kind, "")
+    resid = ""
+    if a.residual_pct is not None:
+        resid = f" (residual {_signed_pct(a.residual_pct)})"
+    tail = f" → {phrase}{resid}" if phrase else resid
+    return f"{head} — {a.theme} {_signed_pct(a.driver_ret_pct)} ({beta}){tail}"
+
+
 def _lines(model: ReportModel) -> list[tuple[str, object]]:
     """Return a list of (kind, payload) tuples. kind in {h1,h2,line,blank,table}.
 
@@ -137,6 +161,19 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
         if mv.abnormal_names:
             ab = "  ·  ".join(f"{m.symbol} ({m.z:+.1f}σ)" for m in mv.abnormal_names)
             out.append(("line", f"Abnormal: {ab}"))
+        dv = model.drivers
+        if dv is not None:
+            for a in dv.attributions:
+                line = _attribution_line(a)
+                if line:
+                    out.append(("line", f"Why: {line}"))
+            for c in dv.catalysts:
+                age = f"{c.days_ago}d ago" if c.days_ago is not None else "recent"
+                src = f", {c.source}" if c.source else ""
+                out.append(
+                    ("line", f"  ↳ {c.symbol}: “{c.headline}” ({age}{src}) — "
+                             f"possible catalyst, unconfirmed")
+                )
         out.append(("blank", ""))
 
     # --- What changed since the last run ---

@@ -28,6 +28,7 @@ class MarketData:
         self._earnings = None
         self._macro = None
         self._econ = None
+        self._news = None
         self._build()
 
     def _build(self) -> None:
@@ -43,12 +44,15 @@ class MarketData:
         if md.get("fundamentals") == "yfinance":
             self._fundamentals = yf_provider
 
-        if md.get("earnings") == "finnhub" or md.get("econ_calendar") == "finnhub":
+        finnhub_users = {md.get("earnings"), md.get("econ_calendar"), md.get("news")}
+        if "finnhub" in finnhub_users:
             finnhub = self._safe(self._make_finnhub, "finnhub")
             if md.get("earnings") == "finnhub":
                 self._earnings = finnhub
             if md.get("econ_calendar") == "finnhub":
                 self._econ = finnhub
+            if md.get("news") == "finnhub":
+                self._news = finnhub
         if self._earnings is None and md.get("earnings") == "yfinance":
             self._earnings = yf_provider
 
@@ -106,3 +110,8 @@ class MarketData:
         if self._econ is None:
             return []
         return self._econ.upcoming_events(days_ahead)
+
+    def company_news(self, symbol: str, days_back: int = 5) -> list[dict]:
+        if self._news is None:
+            return []
+        return self._news.company_news(symbol, days_back)

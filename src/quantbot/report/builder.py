@@ -12,6 +12,7 @@ from quantbot.analysis.benchmark import BenchmarkModel
 from quantbot.analysis.changes import FlagChange
 from quantbot.analysis.contribution import ContributionModel
 from quantbot.analysis.diversification import DiversificationModel
+from quantbot.analysis.drivers import DriverModel
 from quantbot.analysis.events import EventRadar
 from quantbot.analysis.fundamental import days_to_earnings
 from quantbot.analysis.macro import MacroSnapshot
@@ -50,6 +51,7 @@ class ReportModel:
     macro: MacroSnapshot | None = None
     flags: list[Flag] = field(default_factory=list)
     moves: MoveContext | None = None
+    drivers: DriverModel | None = None
     flag_changes: list[FlagChange] = field(default_factory=list)
     diversification: DiversificationModel | None = None
     contribution: ContributionModel | None = None
@@ -69,6 +71,7 @@ def build(
     flags: list[Flag],
     *,
     moves: MoveContext | None = None,
+    drivers: DriverModel | None = None,
     flag_changes: list[FlagChange] | None = None,
     diversification: DiversificationModel | None = None,
     contribution: ContributionModel | None = None,
@@ -119,6 +122,7 @@ def build(
         macro=macro,
         flags=flags,
         moves=moves,
+        drivers=drivers,
         flag_changes=flag_changes or [],
         diversification=diversification,
         contribution=contribution,

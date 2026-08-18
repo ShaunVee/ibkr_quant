@@ -148,6 +148,16 @@ section{margin-bottom:30px;}
 .today .mv-z{font-family:var(--mono);font-size:13px;color:var(--ink-2);}
 .today .mv-z.unusual{color:var(--warn);font-weight:700;}
 .today .drivers{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px 8px;}
+.whys{margin-top:14px;display:flex;flex-direction:column;gap:9px;}
+.why{font-size:13.5px;line-height:1.45;color:var(--ink-1);}
+.why .sym{font-family:var(--mono);font-weight:700;}
+.why .kind{font-family:var(--mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+  padding:1px 7px;border-radius:5px;margin-left:6px;white-space:nowrap;}
+.why .kind.systematic{color:var(--ink-2);background:var(--surface-2);}
+.why .kind.mixed{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);}
+.why .kind.idiosyncratic{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent);}
+.why .detail{color:var(--ink-2);font-family:var(--mono);font-size:12px;}
+.why .cat{display:block;margin-top:3px;padding-left:14px;color:var(--ink-3);font-size:12px;font-style:italic;}
 .chglist{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
 .chg{display:flex;align-items:flex-start;gap:10px;font-size:14px;}
 .chg .lab{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
@@ -230,6 +240,52 @@ def _narrative(model: ReportModel) -> str:
     return f'\n  <div class="lead">{spans}</div>'
 
 
+_KIND_PHRASE = {
+    "systematic": "mostly the theme",
+    "mixed": "theme + name",
+    "idiosyncratic": "name-specific",
+}
+
+
+def _whys(model: ReportModel) -> str:
+    """Driver-attribution rows for the Today card: why each notable name moved, plus any
+    unconfirmed catalyst headlines. Rendered under the move/driver chips."""
+    dv = model.drivers
+    if dv is None or (not dv.attributions and not dv.catalysts):
+        return ""
+
+    intro = _gl("Why", "Each mover split into what its theme (a reference index/commodity) "
+                       "explains — beta × the theme's move — versus a name-specific residual. "
+                       "Headlines are possible, unconfirmed catalysts, not established causes.")
+    rows: list[str] = []
+    for a in dv.attributions:
+        ret = f'<b class="num {"pos" if a.ret_pct >= 0 else "neg"}">{escape(signed_pct(a.ret_pct))}</b>'
+        if not a.theme or a.explained_pct is None or a.driver_ret_pct is None:
+            rows.append(f'<div class="why"><span class="sym">{escape(a.symbol)}</span> {ret} '
+                        f'<span class="detail">— no theme reference</span></div>')
+            continue
+        beta = f'β{escape(fmt_num(a.beta, 2))}' if a.beta is not None else ""
+        resid = ""
+        if a.residual_pct is not None:
+            resid = f' · residual {escape(signed_pct(a.residual_pct))}'
+        kind = (f'<span class="kind {a.kind}">{escape(_KIND_PHRASE.get(a.kind, a.kind))}</span>'
+                if a.kind in _KIND_PHRASE else "")
+        detail = (f'<span class="detail">— {escape(a.theme)} '
+                  f'{escape(signed_pct(a.driver_ret_pct))} ({beta}){resid}</span>')
+        rows.append(f'<div class="why"><span class="sym">{escape(a.symbol)}</span> {ret} '
+                    f'{detail}{kind}</div>')
+
+    cats: list[str] = []
+    for c in dv.catalysts:
+        age = f"{c.days_ago}d ago" if c.days_ago is not None else "recent"
+        src = f", {escape(c.source)}" if c.source else ""
+        cats.append(f'<span class="cat">↳ {escape(c.symbol)}: “{escape(c.headline)}” '
+                    f'({age}{src}) — possible catalyst, unconfirmed</span>')
+
+    body = "".join(rows) + "".join(cats)
+    return f'<div class="whys"><div class="why" style="color:var(--ink-3)">{intro}</div>{body}</div>'
+
+
 def _today(model: ReportModel) -> str:
     mv = model.moves
     new = [c for c in model.flag_changes if c.status == "new"]
@@ -264,6 +320,7 @@ def _today(model: ReportModel) -> str:
             f'<div class="move"><span class="mv-ret {ret_cls}">'
             f'{escape(signed_pct(mv.port_ret_pct))}</span>{z_html}</div>{drivers}'
         )
+        inner += _whys(model)
 
     rows = []
     for c in new:

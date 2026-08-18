@@ -42,3 +42,10 @@ class EconCalendarProvider(ABC):
     @abstractmethod
     def upcoming_events(self, days_ahead: int = 14) -> list[dict]:
         """Return upcoming economic events: [{date, event, impact, ...}]."""
+
+
+class NewsProvider(ABC):
+    @abstractmethod
+    def company_news(self, symbol: str, days_back: int = 5) -> list[dict]:
+        """Return recent company headlines, newest first:
+        [{date, headline, source, url}]. Empty list on failure/no coverage."""

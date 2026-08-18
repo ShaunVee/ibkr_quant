@@ -22,6 +22,7 @@ providers:
     earnings: finnhub               # finnhub | (future) fmp
     macro: fred                     # fred (authoritative, free)
     econ_calendar: finnhub          # finnhub | (future) fmp
+    news: finnhub                   # finnhub (free company-news) | (blank to disable)
 
 # Rolling window (calendar days) of daily prices to pull for TA / risk math.
 history_days: 400
@@ -44,6 +45,22 @@ events:
   horizon_days: 14                  # how far forward to scan for earnings + macro events
   rate_proxy: TLT                   # bond ETF used as the rates proxy for beta
   rate_beta_threshold: 0.20         # |beta| to the proxy above which a name is rate-sensitive
+
+# Driver attribution: for each of the day's notable movers, split the move into the part
+# its "theme" explains (beta x theme return) and the name-specific residual — so the brief
+# can say *why* a name moved, not just that it did. Each theme ticker is pulled free via the
+# price provider; unmapped names fall back to `default`. For abnormal single-stock movers,
+# recent headlines are attached as *possible* (unconfirmed) catalysts via the news provider.
+drivers:
+  default:                          # any name without an explicit mapping below
+    ticker: SPY
+    theme: the broad market
+  max_movers: 5                     # cap on how many movers get an attribution line
+  map:
+    SLV:  {ticker: "SI=F",   theme: silver}
+    IBIT: {ticker: "BTC-USD", theme: bitcoin}
+    META: {ticker: XLC,      theme: comm-services}
+    FIG:  {ticker: IGV,      theme: software}
 
 # Scenario stress test: translate the book's risk into dollar impact under named shocks.
 # Market shocks are applied through the portfolio's beta; the rate shock through its
