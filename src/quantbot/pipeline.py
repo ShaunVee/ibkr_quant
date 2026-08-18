@@ -34,6 +34,7 @@ from quantbot.analysis import (
     events as events_mod,
     fundamental,
     macro,
+    money as money_mod,
     movement,
     risk,
     stress,
@@ -189,6 +190,17 @@ def stage_analyze(
     # --- history & trends: read the recorded series back (None until 2+ snapshots) ---
     trend_model = trends.compute(store.snapshot_history(account_id))
 
+    # --- your money, in plain English (#8): re-express the analytics above as dollars ---
+    money_model = money_mod.compute(
+        invested_value=portfolio.invested_value,
+        currency=portfolio.account.base_currency,
+        benchmark=benchmark_model,
+        trends=trend_model,
+        port_returns=risk.portfolio_return_series(risk_metrics.weights, price_frames),
+        diversification=diversification_model,
+        holdings=portfolio.holdings,
+    )
+
     model = builder.build(
         portfolio,
         fundamentals,
@@ -198,6 +210,7 @@ def stage_analyze(
         the_flags,
         moves=moves,
         drivers=drivers_model,
+        money=money_model,
         flag_changes=flag_changes,
         diversification=diversification_model,
         contribution=contribution_model,

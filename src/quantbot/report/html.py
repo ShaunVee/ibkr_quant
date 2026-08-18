@@ -101,6 +101,8 @@ section{margin-bottom:30px;}
   text-transform:uppercase;color:var(--crit);background:color-mix(in srgb,var(--crit) 14%,transparent);padding:2px 6px;border-radius:6px;}
 .context{margin-top:12px;font-size:13px;color:var(--ink-2);display:flex;flex-wrap:wrap;gap:4px 18px;}
 .context b{color:var(--ink-1);font-weight:600;}
+.betting{margin-top:12px;padding:11px 14px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:10px;font-size:14px;color:var(--ink-1);}
 .alloc-bar{display:flex;height:30px;border-radius:8px;overflow:hidden;gap:2px;background:var(--border);}
 .alloc-bar>span{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;font-family:var(--mono);min-width:0;text-shadow:0 1px 1px rgba(0,0,0,.3);}
 .alloc-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:12.5px;color:var(--ink-2);}
@@ -286,6 +288,79 @@ def _whys(model: ReportModel) -> str:
     return f'<div class="whys"><div class="why" style="color:var(--ink-3)">{intro}</div>{body}</div>'
 
 
+def _money(model: ReportModel) -> str:
+    """The plain-English 'Your Money' hero (analysis #8): dollars first, no jargon.
+    Placed right under the narrative — the first real section the owner reads."""
+    m = model.money
+    if m is None:
+        return ""
+    cur = model.base_currency
+
+    tiles = ""
+    for w in m.windows:
+        cls = _pl_class(w.pnl)
+        sub = escape(signed_pct(w.pct))
+        if w.bench_pct is not None and w.bench_label:
+            sub += f" · {escape(w.bench_label)} {escape(signed_pct(w.bench_pct))}"
+        tiles += (f'<div class="tile"><div class="k">{escape(w.label)}</div>'
+                  f'<div class="v num{cls}">{escape(signed_money(w.pnl))}</div>'
+                  f'<div class="n">{sub}</div></div>')
+    tiles_block = f'<div class="tiles">{tiles}</div>' if tiles else ""
+
+    # Per-holding standing — the broker-app "am I up or down on this one?" view.
+    stand = ""
+    if m.winners or m.losers:
+        ranked = sorted(m.winners + m.losers, key=lambda h: -abs(h.pnl))[:10]
+        chips = "".join(
+            f'<span class="chip {"up" if h.pnl >= 0 else "down"}">'
+            f'{escape(h.symbol)} {escape(signed_money(h.pnl))}</span>'
+            for h in ranked
+        )
+        total = ""
+        if m.total_unrealized is not None:
+            total = (f' · <b class="num{_pl_class(m.total_unrealized)}">'
+                     f'{escape(signed_money(m.total_unrealized))}</b> unrealized')
+        stand = (f'<div class="ev-group"><div class="ev-lbl">Where you stand — '
+                 f'{len(m.winners)} up · {len(m.losers)} underwater{total}</div>'
+                 f'<div class="drivers">{chips}</div></div>')
+
+    bits: list[str] = []
+    if m.vs_index_pnl is not None and m.bench_symbol:
+        cls = _pl_class(m.vs_index_pnl)
+        verb = "ahead of" if m.vs_index_pnl >= 0 else "behind"
+        label = escape((m.vs_index_label or "").lower())
+        bits.append(
+            f'<span>vs {escape(m.bench_symbol)} ({label}) '
+            f'<b class="num{cls}">{escape(signed_money(m.vs_index_pnl))}</b> — {verb} '
+            f'just buying the index</span>'
+        )
+    if m.recovery is not None:
+        bits.append(
+            f'<span>Down <b class="num neg">{escape(fmt_pct(m.recovery.drawdown_pct))}</b> '
+            f'from your peak — needs <b class="num">'
+            f'{escape(signed_pct(m.recovery.gain_needed_pct))}</b> to get back to even</span>'
+        )
+    if m.best_day is not None and m.worst_day is not None:
+        bits.append(
+            f'<span>Best day <b class="num pos">{escape(signed_money(m.best_day.pnl))}</b> · '
+            f'Worst day <b class="num neg">{escape(signed_money(m.worst_day.pnl))}</b></span>'
+        )
+    context = f'<div class="context">{"".join(bits)}</div>' if bits else ""
+
+    betting = ""
+    if m.betting_on:
+        betting = f'<div class="betting">{escape(m.betting_on)}</div>'
+
+    title = _gl("Your Money", "Money your current holdings would have made or lost over each "
+                              "window — the book held constant over history, not a realized "
+                              "track record. Deposits and withdrawals are excluded.")
+    return f"""
+  <section>
+    <div class="sec-head"><h2>{title}</h2><span class="rule"></span></div>
+    {tiles_block}{stand}{context}{betting}
+  </section>"""
+
+
 def _today(model: ReportModel) -> str:
     mv = model.moves
     new = [c for c in model.flag_changes if c.status == "new"]
@@ -428,7 +503,6 @@ def _risk(model: ReportModel) -> str:
     tiles = f"""
       <div class="tile{beta_crit}">{beta_badge}<div class="k">Beta</div><div class="v num">{escape(fmt_num(r.portfolio_beta))}</div><div class="n">1.0 = moves with market</div></div>
       <div class="tile"><div class="k">Ann. Vol</div><div class="v num">{escape(ann_vol)}</div><div class="n">yearly swing · lower = calmer</div></div>
-      <div class="tile"><div class="k">Sharpe</div><div class="v num">{escape(fmt_num(r.sharpe))}</div><div class="n">return per unit risk · higher better</div></div>
       <div class="tile{dd_crit}">{dd_badge}<div class="k">Max Drawdown</div><div class="v num">{escape(max_dd)}</div><div class="n">worst peak-to-trough · smaller better</div></div>
       <div class="tile"><div class="k">1-Day VaR</div><div class="v num">{escape(var)}</div><div class="n">a typical bad day (95%)</div></div>
       <div class="tile"><div class="k">Eff. Positions</div><div class="v num">{escape(fmt_num(r.effective_positions, 1))}</div><div class="n">of {len(model.positions)} held · higher = less concentrated</div></div>"""
@@ -521,10 +595,6 @@ def _structure(model: ReportModel) -> str:
             tiles += (f'<div class="tile{hi}"><div class="k">Top Factor</div>'
                       f'<div class="v num">{escape(fmt_pct(d.top_factor_share * 100, 0))}</div>'
                       f'<div class="n">one theme\'s share · lower better</div></div>')
-        if d.avg_correlation is not None:
-            tiles += (f'<div class="tile"><div class="k">Avg Correlation</div>'
-                      f'<div class="v num">{escape(fmt_num(d.avg_correlation, 2))}</div>'
-                      f'<div class="n">0 = unrelated · 1 = one bet</div></div>')
         clusters = ""
         if d.clusters:
             items = "".join(
@@ -569,40 +639,20 @@ def _benchmark(model: ReportModel) -> str:
     if bm is None:
         return ""
 
+    # Excess return / tracking error / capture / R² are folded into "Your Money" as dollars.
+    # Here we keep only the one read that isn't about P/L: how much of the ride is just market.
     tiles = ""
     if bm.beta is not None:
-        if bm.r_squared is not None:
-            r2 = (_gl("R²", f"Share of your day-to-day moves explained by {bm.symbol}. "
-                            "Near 1 = you basically are the index; low = you move on your own.")
-                  + f" {escape(fmt_num(bm.r_squared, 2))}")
-        else:
-            r2 = "1.0 = tracks the index"
         tiles += (f'<div class="tile"><div class="k">Beta vs {escape(bm.symbol)}</div>'
                   f'<div class="v num">{escape(fmt_num(bm.beta, 2))}</div>'
-                  f'<div class="n">{r2}</div></div>')
+                  f'<div class="n">1.0 = you basically are the index</div></div>')
     if bm.alpha_annual_pct is not None:
         cls = "pos" if bm.alpha_annual_pct >= 0 else "neg"
         tiles += (f'<div class="tile"><div class="k">Alpha</div>'
                   f'<div class="v num {cls}">{escape(signed_pct(bm.alpha_annual_pct))}</div>'
                   f'<div class="n">return beyond the market · higher better</div></div>')
-    if bm.tracking_error_pct is not None:
-        tiles += (f'<div class="tile"><div class="k">Tracking Error</div>'
-                  f'<div class="v num">{escape(fmt_pct(bm.tracking_error_pct))}</div>'
-                  f'<div class="n">how far you stray · lower = closer</div></div>')
 
-    chips = ""
-    for w in bm.windows:
-        cls = "up" if w.excess_pct >= 0 else "down"
-        chips += (f'<span class="chip {cls}">{escape(w.label)} '
-                  f'{escape(signed_pct(w.excess_pct))} vs {escape(bm.symbol)}</span>')
-    if bm.up_capture is not None and bm.down_capture is not None:
-        up_gl = _gl("up capture", "Of the index's gains, how much you catch. "
-                                  "Over 100% = you rise more than it does.")
-        down_gl = _gl("down capture", "Of the index's losses, how much you take. "
-                                      "Under 100% = you fall less than it does.")
-        chips += (f'<span class="chip">{up_gl} {escape(fmt_pct(bm.up_capture * 100, 0))}</span>'
-                  f'<span class="chip">{down_gl} {escape(fmt_pct(bm.down_capture * 100, 0))}</span>')
-    drivers = f'<div class="drivers">{chips}</div>' if chips else ""
+    drivers = ""
 
     drift = ""
     if bm.drifts:
@@ -616,6 +666,8 @@ def _benchmark(model: ReportModel) -> str:
         drift = f'<div class="chglist">{rows}</div>'
 
     tiles_block = f'<div class="tiles">{tiles}</div>' if tiles else ""
+    if not (tiles or drift):
+        return ""
     return f"""
   <section>
     <div class="sec-head"><h2>vs {escape(bm.symbol)}</h2><span class="rule"></span></div>
@@ -803,6 +855,7 @@ def render_html(model: ReportModel) -> str:
         for part in (
             _header(model),
             _narrative(model),
+            _money(model),
             _today(model),
             _trends(model),
             _risk(model),

@@ -110,6 +110,44 @@ def test_telegram_tables_wrapped_in_pre():
     assert html.count("<pre>") >= 3
 
 
+def _money_model():
+    from quantbot.analysis.money import HoldingPnL, MoneyModel, MoneyWindow, Recovery
+
+    model = _model()
+    model.money = MoneyModel(
+        currency="USD",
+        invested_value=90000,
+        windows=[
+            MoneyWindow(label="Today", pct=0.4, pnl=360, bench_label="SPY",
+                        bench_pct=0.2, bench_pnl=180),
+            MoneyWindow(label="Past 3 months", pct=6.0, pnl=5400, bench_label="SPY",
+                        bench_pct=8.0, bench_pnl=7200),
+        ],
+        bench_symbol="SPY",
+        vs_index_pnl=-1800,
+        vs_index_label="Past 3 months",
+        recovery=Recovery(drawdown_pct=11.0, gain_needed_pct=12.4, peak_value=101000),
+        betting_on="Your 2 holdings really act like about 1 bet.",
+        winners=[HoldingPnL(symbol="AAPL", pnl=2100, pct=21.0)],
+        losers=[HoldingPnL(symbol="MSFT", pnl=-1400, pct=-12.0)],
+        total_unrealized=700,
+    )
+    return model
+
+
+def test_your_money_section_leads_in_dollars():
+    text = formatter.format_text(_money_model())
+    assert "Your Money" in text
+    # Dollars, the index counterfactual, and the recovery math are all present.
+    assert "behind just buying the index" in text
+    assert "to get back to even" in text
+    # Per-holding standing: winners/underwater callout.
+    assert "Where you stand: 1 up, 1 underwater" in text
+    assert "AAPL +2.1k" in text and "MSFT -1.4k" in text
+    # Your Money is rendered before the Today/Risk sections.
+    assert text.index("Your Money") < text.index("Portfolio Risk")
+
+
 def test_narrative_prepended_when_present():
     model = _model()
     model.narrative = "Tech-heavy book, one concentration flag to watch."

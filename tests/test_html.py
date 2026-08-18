@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from quantbot.report import formatter, html
-from tests.test_report import _model
+from tests.test_report import _model, _money_model
 
 
 def test_render_html_is_a_complete_document():
@@ -37,6 +37,18 @@ def test_render_html_escapes_narrative():
     model.narrative = "Risk & reward < balanced > today"
     doc = html.render_html(model)
     assert "Risk &amp; reward &lt; balanced &gt; today" in doc
+
+
+def test_render_html_includes_your_money_section():
+    doc = html.render_html(_money_model())
+    assert "Your Money" in doc
+    assert "just buying the index" in doc
+    assert "to get back to even" in doc
+    # Per-holding standing chips ("am I up or down on this one?").
+    assert "Where you stand" in doc
+    assert "AAPL +2.1k" in doc and "MSFT -1.4k" in doc
+    # The money hero sits above the Portfolio Risk section.
+    assert doc.index("Your Money") < doc.index("Portfolio Risk")
 
 
 def test_caption_has_headline_and_flag_summary():

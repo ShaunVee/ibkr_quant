@@ -16,6 +16,7 @@ from quantbot.analysis.drivers import DriverModel
 from quantbot.analysis.events import EventRadar
 from quantbot.analysis.fundamental import days_to_earnings
 from quantbot.analysis.macro import MacroSnapshot
+from quantbot.analysis.money import MoneyModel
 from quantbot.analysis.movement import MoveContext
 from quantbot.analysis.risk import RiskMetrics
 from quantbot.analysis.stress import StressModel
@@ -52,6 +53,7 @@ class ReportModel:
     flags: list[Flag] = field(default_factory=list)
     moves: MoveContext | None = None
     drivers: DriverModel | None = None
+    money: MoneyModel | None = None
     flag_changes: list[FlagChange] = field(default_factory=list)
     diversification: DiversificationModel | None = None
     contribution: ContributionModel | None = None
@@ -72,6 +74,7 @@ def build(
     *,
     moves: MoveContext | None = None,
     drivers: DriverModel | None = None,
+    money: MoneyModel | None = None,
     flag_changes: list[FlagChange] | None = None,
     diversification: DiversificationModel | None = None,
     contribution: ContributionModel | None = None,
@@ -123,6 +126,7 @@ def build(
         flags=flags,
         moves=moves,
         drivers=drivers,
+        money=money,
         flag_changes=flag_changes or [],
         diversification=diversification,
         contribution=contribution,

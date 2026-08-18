@@ -46,9 +46,31 @@ narrative only summarizes them.
    name-specific residual, classified systematic / mixed / idiosyncratic. For abnormal
    single-stock movers, recent headlines are attached as *possible, unconfirmed* catalysts.
    The theme map is tunable in `config.yaml` (`drivers.map`).
+8. **Your money, in plain English** — *"cut the jargon"*: the same analytics re-expressed as
+   money and framed against a decision. What the holdings made/lost today / past month / past
+   3 months **in dollars**, the single best and worst day, **where you stand on each holding**
+   (winners vs. underwater names since you bought them, from Flex cost basis), whether you're
+   **ahead of or behind just buying the index** (in dollars, not alpha), how far **underwater**
+   you are and the gain needed to break even, and a one-line *"what are you really betting on?"*.
+   It leads the brief.
 
 Plus a **history & trends** readout — how account value, beta, vol, concentration and flags
 have drifted over the recorded snapshot window (IBKR is stateless; the daily snapshots aren't).
+
+The brief leads with #8 (money, plain terms) and demotes the quant metrics beneath it. Pure
+reference noise a layman never acts on (Sharpe, tracking error, up/down capture, R², raw
+average-correlation) has been cut; the metrics that remain carry a one-line "what this means
+for you" gloss.
+
+### Next steps (backlog)
+
+Layman-first ideas not yet built, roughly in value order:
+
+- **Dividend "paycheck" view** — "these holdings pay you ≈ $X/year (~Y%)", from yfinance yields.
+- **Sleep-at-night number** — vol/CVaR restated as "a normal bad day ≈ −$X; a rough one ≈ −$Y".
+- **Breadth tally** — "6 of 9 holdings green this month, but 80% of the gain is one name".
+- **Persistent-problem tracker** — a flag that has tripped N days running vs. one-day noise
+  (the snapshot history already supports this).
 
 ## Status
 

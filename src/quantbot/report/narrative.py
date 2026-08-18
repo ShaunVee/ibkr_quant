@@ -21,7 +21,15 @@ _SYSTEM = (
     "You are given a deterministic report containing already-computed numbers, risk "
     "metrics, and rule-based flags. Write a tight 2-4 sentence summary that synthesizes "
     "what matters today.\n\n"
-    "LEAD with what CHANGED and whether today's move was notable — the 'Today' and 'What "
+    "LEAD in plain money, from the 'Your Money' section: what the holdings made or lost in "
+    "the account currency over today / the past month / the past three months, whether the "
+    "book is ahead of or behind just buying the index (the dollar figure), and — if "
+    "underwater — how far below peak it is and the gain needed to break even. You may also "
+    "name where the owner stands per holding (which names are in the green, which are "
+    "underwater, and the standout on each side) from the 'Your Money' winners/losers list. "
+    "Speak in currency a layman feels, not percentages alone. This is the owner's first "
+    "question.\n"
+    "THEN cover what CHANGED and whether today's move was notable — the 'Today' and 'What "
     "Changed' sections. Say if the move was within normal range or unusual (the sigma), "
     "and name what drove it. Call out newly-triggered and cleared flags before anything "
     "static. Demote unchanged posture and standing figures to supporting detail.\n"
@@ -37,9 +45,9 @@ _SYSTEM = (
     "When the report shows hidden concentration — few effective bets, a high top-factor "
     "share, a correlated cluster, or a name whose risk share far exceeds its weight — "
     "surface it: it is exactly what the owner can't see on a positions screen.\n"
-    "If a benchmark comparison is present, note whether the book is ahead or behind and "
-    "how much of its return is just market exposure (beta / R²) rather than alpha, and "
-    "mention any target-weight drift as a rebalancing cue.\n"
+    "The index counterfactual belongs in the money lead above; if a benchmark section is "
+    "present, use it only to note how much of the ride is just market exposure (the beta) "
+    "rather than skill, and mention any target-weight drift as a rebalancing cue.\n"
     "If an event radar is present, flag forward risk the owner is walking into: earnings "
     "clustering in the next few days and how much of the book reports, an imminent macro "
     "print (CPI/FOMC), and — if a large share of the book is rate-sensitive — that it is "
@@ -104,6 +112,34 @@ def _fallback(model: ReportModel) -> str:
     """Deterministic one-liner assembled from the computed model."""
     parts: list[str] = []
     cur = model.base_currency
+
+    mn = model.money
+    if mn is not None:
+        from quantbot.report.numfmt import signed_full_money, signed_pct
+
+        if mn.windows:
+            spans = ", ".join(
+                f"{w.label.lower()} {signed_full_money(w.pnl, cur)}" for w in mn.windows
+            )
+            parts.append(f"Your holdings: {spans}.")
+        if mn.vs_index_pnl is not None and mn.bench_symbol:
+            verb = "ahead of" if mn.vs_index_pnl >= 0 else "behind"
+            parts.append(
+                f"That's {signed_full_money(mn.vs_index_pnl, cur)} {verb} just buying "
+                f"{mn.bench_symbol}."
+            )
+        if mn.recovery is not None:
+            parts.append(
+                f"Down {mn.recovery.drawdown_pct:.1f}% from peak — needs "
+                f"{signed_pct(mn.recovery.gain_needed_pct)} to break even."
+            )
+        if mn.winners or mn.losers:
+            stand = f"{len(mn.winners)} up, {len(mn.losers)} underwater"
+            if mn.winners:
+                stand += f"; best {mn.winners[0].symbol} {signed_full_money(mn.winners[0].pnl, cur)}"
+            if mn.losers:
+                stand += f"; worst {mn.losers[0].symbol} {signed_full_money(mn.losers[0].pnl, cur)}"
+            parts.append(stand + ".")
 
     mv = model.moves
     if mv is not None and mv.port_ret_pct is not None:

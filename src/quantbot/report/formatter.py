@@ -17,6 +17,7 @@ from quantbot.report.numfmt import (
     fmt_money as _fmt_money,
     fmt_num as _fmt_num,
     fmt_pct as _fmt_pct,
+    signed_full_money as _signed_full_money,
     signed_money as _signed_money,
     signed_pct as _signed_pct,
 )
@@ -125,6 +126,79 @@ def _attribution_line(a: "object") -> str | None:
     return f"{head} — {a.theme} {_signed_pct(a.driver_ret_pct)} ({beta}){tail}"
 
 
+def _risk_gloss(r: "object") -> str:
+    """One plain-English sentence translating the risk grid into felt terms."""
+    bits: list[str] = []
+    if r.portfolio_beta is not None:
+        bits.append(f"moves about {r.portfolio_beta:.1f}× the market")
+    if r.annualized_vol:
+        bits.append(f"a normal year swings roughly ±{r.annualized_vol * 100:.0f}%")
+    return "; ".join(bits)
+
+
+def _money_lines(model: ReportModel) -> list[tuple[str, object]]:
+    """The plain-English 'Your Money' block (analysis #8): dollars first, no jargon."""
+    m = model.money
+    if m is None:
+        return []
+    cur = m.currency
+    out: list[tuple[str, object]] = [("h2", "Your Money")]
+
+    if m.windows:
+        rows = [
+            [
+                w.label,
+                _signed_pct(w.pct),
+                f"≈ {_signed_full_money(w.pnl, cur)}",
+            ]
+            for w in m.windows
+        ]
+        out.append(("line", "What your holdings made/lost:"))
+        out.append(("table", _Table(rows=rows, aligns=["l", "r", "r"])))
+
+    if m.winners or m.losers:
+        out.append((
+            "line",
+            f"Where you stand: {len(m.winners)} up, {len(m.losers)} underwater"
+            + (f"  ·  {_signed_full_money(m.total_unrealized, cur)} unrealized"
+               if m.total_unrealized is not None else ""),
+        ))
+        if m.winners:
+            wins = ", ".join(f"{h.symbol} {_signed_money(h.pnl)}" for h in m.winners[:3])
+            out.append(("line", f"  Winners: {wins}"))
+        if m.losers:
+            losses = ", ".join(f"{h.symbol} {_signed_money(h.pnl)}" for h in m.losers[:3])
+            out.append(("line", f"  Underwater: {losses}"))
+
+    if m.best_day is not None and m.worst_day is not None:
+        out.append((
+            "line",
+            f"Best day {_signed_pct(m.best_day.ret_pct)} ({_signed_money(m.best_day.pnl)})  ·  "
+            f"Worst day {_signed_pct(m.worst_day.ret_pct)} ({_signed_money(m.worst_day.pnl)})",
+        ))
+
+    if m.vs_index_pnl is not None and m.bench_symbol:
+        verb = "ahead of" if m.vs_index_pnl >= 0 else "behind"
+        out.append((
+            "line",
+            f"vs {m.bench_symbol} ({m.vs_index_label.lower()}): "
+            f"you're {_signed_full_money(m.vs_index_pnl, cur)} — {verb} just buying the index.",
+        ))
+
+    if m.recovery is not None:
+        out.append((
+            "line",
+            f"Underwater: {_fmt_pct(m.recovery.drawdown_pct)} below your peak — "
+            f"needs {_signed_pct(m.recovery.gain_needed_pct)} to get back to even.",
+        ))
+
+    if m.betting_on:
+        out.append(("line", f"Betting on: {m.betting_on}"))
+
+    out.append(("blank", ""))
+    return out
+
+
 def _lines(model: ReportModel) -> list[tuple[str, object]]:
     """Return a list of (kind, payload) tuples. kind in {h1,h2,line,blank,table}.
 
@@ -142,6 +216,9 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
                  f"Invested: {_fmt_money(model.invested_value, cur)}")
     )
     out.append(("blank", ""))
+
+    # --- Your money, plain English (analysis #8) — lead with dollars ---
+    out.extend(_money_lines(model))
 
     # --- Today's move (contextualized) ---
     mv = model.moves
@@ -226,14 +303,16 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
             rows=[
                 ["Beta", _fmt_num(r.portfolio_beta),
                  "Ann Vol", _fmt_pct((r.annualized_vol or 0) * 100) if r.annualized_vol else "—"],
-                ["Sharpe", _fmt_num(r.sharpe),
-                 "Max DD", _fmt_pct((r.max_drawdown or 0) * 100) if r.max_drawdown is not None else "—"],
-                ["1d VaR", _fmt_pct((r.var_pct or 0) * 100) if r.var_pct else "—",
-                 "Eff Pos", _fmt_num(r.effective_positions, 1)],
+                ["Max DD", _fmt_pct((r.max_drawdown or 0) * 100) if r.max_drawdown is not None else "—",
+                 "1d VaR", _fmt_pct((r.var_pct or 0) * 100) if r.var_pct else "—"],
+                ["Eff Pos", _fmt_num(r.effective_positions, 1), "", ""],
             ],
             aligns=["l", "r", "l", "r"],
         )
         out.append(("table", grid))
+        gloss = _risk_gloss(r)
+        if gloss:
+            out.append(("line", f"In plain terms: {gloss}"))
         if r.sector_weights:
             top_sectors = sorted(r.sector_weights.items(), key=lambda x: -x[1])[:3]
             sec_str = ", ".join(f"{s} {_fmt_pct(w * 100, 0)}" for s, w in top_sectors)
@@ -284,8 +363,6 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
             )
             out.append(("line", f"Effective bets: {_fmt_num(d.effective_bets, 1)} "
                                 f"of {d.coverage} holdings{share}"))
-        if d.avg_correlation is not None:
-            out.append(("line", f"Avg correlation: {_fmt_num(d.avg_correlation, 2)} (weighted)"))
         for c in d.clusters:
             out.append(("line", f"Cluster: {', '.join(c.symbols)} "
                                 f"(corr {_fmt_num(c.avg_corr, 2)}  ·  "
@@ -320,22 +397,15 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
     bm = model.benchmark
     if bm is not None:
         out.append(("h2", f"vs {bm.symbol}"))
-        if bm.windows:
-            excess = "  ·  ".join(f"{w.label} {_signed_pct(w.excess_pct)}" for w in bm.windows)
-            out.append(("line", f"Excess: {excess}"))
+        # Excess return / tracking error / capture / R² are all folded into "Your Money"
+        # as dollars now; here we keep only how much of the ride is just market exposure.
         stat_bits = []
         if bm.beta is not None:
-            r2 = f" (R² {_fmt_num(bm.r_squared, 2)})" if bm.r_squared is not None else ""
-            stat_bits.append(f"Beta {_fmt_num(bm.beta, 2)}{r2}")
+            stat_bits.append(f"Beta {_fmt_num(bm.beta, 2)} (share of moves that's just {bm.symbol})")
         if bm.alpha_annual_pct is not None:
             stat_bits.append(f"alpha {_signed_pct(bm.alpha_annual_pct)}/yr")
-        if bm.tracking_error_pct is not None:
-            stat_bits.append(f"tracking error {_fmt_pct(bm.tracking_error_pct)}")
         if stat_bits:
             out.append(("line", "  ·  ".join(stat_bits)))
-        if bm.up_capture is not None and bm.down_capture is not None:
-            out.append(("line", f"Capture: up {_fmt_pct(bm.up_capture * 100, 0)}  ·  "
-                                f"down {_fmt_pct(bm.down_capture * 100, 0)}"))
         for dr in bm.drifts:
             out.append(("line", f"Drift: {dr.symbol} {_fmt_pct(dr.weight * 100, 0)} vs "
                                 f"{_fmt_pct(dr.target * 100, 0)} target "
