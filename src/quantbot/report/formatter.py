@@ -303,9 +303,10 @@ def _lines(model: ReportModel) -> list[tuple[str, object]]:
             rows=[
                 ["Beta", _fmt_num(r.portfolio_beta),
                  "Ann Vol", _fmt_pct((r.annualized_vol or 0) * 100) if r.annualized_vol else "—"],
-                ["Max DD", _fmt_pct((r.max_drawdown or 0) * 100) if r.max_drawdown is not None else "—",
+                ["Max DD", _fmt_pct((r.realized_drawdown or 0) * 100) if r.realized_drawdown is not None else "—",
                  "1d VaR", _fmt_pct((r.var_pct or 0) * 100) if r.var_pct else "—"],
-                ["Eff Pos", _fmt_num(r.effective_positions, 1), "", ""],
+                ["Sim DD", _fmt_pct((r.max_drawdown or 0) * 100) if r.max_drawdown is not None else "—",
+                 "Eff Pos", _fmt_num(r.effective_positions, 1)],
             ],
             aligns=["l", "r", "l", "r"],
         )

@@ -67,6 +67,31 @@ def test_max_drawdown_on_known_series():
     assert dd == pytest.approx(-0.20)
 
 
+def test_realized_drawdown_on_equity_curve():
+    # Peak 110, trough 88 -> worst peak-to-trough = 88/110 - 1 = -0.20.
+    values = [100.0, 110.0, 99.0, 88.0, 95.0]
+    dd = risk.realized_drawdown(values)
+    assert dd == pytest.approx(-0.20)
+
+
+def test_realized_drawdown_needs_two_points():
+    assert risk.realized_drawdown([100.0]) is None
+    assert risk.realized_drawdown([None, 100.0]) is None
+
+
+def test_portfolio_return_series_renormalizes_partial_coverage():
+    # AAPL has an extra early day MSFT lacks; on that day the series must equal AAPL's
+    # own return (covered weight renormalized to 1.0), not the under-summed 0.5 * r.
+    idx = pd.date_range("2025-01-01", periods=4, freq="B")
+    aapl = pd.DataFrame({"close": [100.0, 110.0, 121.0, 133.1]}, index=idx)
+    msft = pd.DataFrame({"close": [200.0, 210.0, 220.5]}, index=idx[1:])
+    series = risk.portfolio_return_series(
+        {"AAPL": 0.5, "MSFT": 0.5}, {"AAPL": aapl, "MSFT": msft}
+    )
+    # First return day (only AAPL has data): +10%, renormalized to full weight.
+    assert series.iloc[0] == pytest.approx(0.10)
+
+
 def test_historical_var_positive_fraction():
     rng = np.random.default_rng(42)
     returns = pd.Series(rng.normal(0, 0.01, 500))

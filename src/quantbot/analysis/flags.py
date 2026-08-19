@@ -79,14 +79,16 @@ def evaluate(
             )
         )
 
-    if risk.max_drawdown is not None and risk.max_drawdown * -100.0 >= dd_pct:
+    # Breach on the *realized* account drawdown (a loss actually taken), not the simulated
+    # current-weights backtest — the latter is a "could have" and would cry wolf here.
+    if risk.realized_drawdown is not None and risk.realized_drawdown * -100.0 >= dd_pct:
         flags.append(
             Flag(
                 code="DRAWDOWN",
                 severity="warn",
                 symbol=None,
                 message=(
-                    f"Portfolio max drawdown ≈ {risk.max_drawdown * 100:.1f}% "
+                    f"Account drawdown ≈ {risk.realized_drawdown * 100:.1f}% from peak "
                     f"(threshold -{dd_pct:.0f}%)."
                 ),
             )

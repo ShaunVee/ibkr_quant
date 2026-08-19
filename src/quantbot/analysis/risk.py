@@ -7,6 +7,7 @@ concentration, weighted beta, annualized vol, Sharpe, max drawdown, historical V
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -26,7 +27,8 @@ class RiskMetrics:
     portfolio_beta: float | None = None
     annualized_vol: float | None = None
     sharpe: float | None = None
-    max_drawdown: float | None = None           # negative fraction, e.g. -0.23
+    max_drawdown: float | None = None           # SIMULATED: current weights held over price history
+    realized_drawdown: float | None = None      # worst peak-to-trough of recorded account equity
     var_pct: float | None = None                # historical VaR as positive fraction
     top_position: tuple[str, float] | None = None
 
@@ -86,7 +88,11 @@ def portfolio_return_series(
     """Weighted daily returns of the current book using each symbol's price history.
 
     Uses *current* weights held constant (a standard approximation when a true daily
-    snapshot history isn't yet available).
+    snapshot history isn't yet available) — this is a hypothetical backtest of today's
+    book, not a realized track record. On days where only some symbols have price history
+    (uneven listing dates), we renormalize by the weight actually *covered* that day, so
+    the series stays a true weighted average instead of an under-summed partial that
+    silently under-weights the whole book toward whichever names have the longest history.
     """
     return_cols = {}
     for symbol, w in weights.items():
@@ -95,19 +101,46 @@ def portfolio_return_series(
             continue
         r = daily_returns(df["close"].dropna())
         if not r.empty:
-            return_cols[symbol] = r * w
+            return_cols[symbol] = r
     if not return_cols:
         return pd.Series(dtype="float64")
-    combined = pd.DataFrame(return_cols).dropna(how="all")
-    return combined.sum(axis=1, min_count=1).dropna()
+    rets = pd.DataFrame(return_cols).dropna(how="all")
+    w = pd.Series({sym: weights[sym] for sym in rets.columns})
+    covered = rets.notna().mul(w, axis=1).sum(axis=1)          # weight present each day
+    weighted = rets.mul(w, axis=1).sum(axis=1, min_count=1)
+    series = (weighted / covered).replace([np.inf, -np.inf], np.nan).dropna()
+    return series
 
 
 def max_drawdown(return_series: pd.Series) -> float | None:
+    """SIMULATED worst peak-to-trough of the current book's hypothetical equity curve.
+
+    Built from `portfolio_return_series` (today's weights held constant), so it answers
+    "how bad *could* today's book have drawn down" — not a loss actually taken. For the
+    realized figure use `realized_drawdown` over the recorded account equity.
+    """
     if return_series.empty:
         return None
     equity = (1.0 + return_series).cumprod()
     running_max = equity.cummax()
     drawdown = equity / running_max - 1.0
+    return float(drawdown.min())
+
+
+def realized_drawdown(equity_values: Sequence[float | None]) -> float | None:
+    """Worst peak-to-trough of a *recorded* account-equity curve (ascending by date).
+
+    `equity_values` is the net-liquidation series from recorded snapshots — the account's
+    actual value over time. Returns a negative fraction (e.g. -0.08), or None until there
+    are at least two usable points. Caveat: net_liq includes external flows (deposits /
+    withdrawals), so a large withdrawal can register as drawdown; this is the same
+    flows-included basis the trends layer uses.
+    """
+    clean = [float(v) for v in equity_values if v is not None]
+    if len(clean) < 2:
+        return None
+    equity = pd.Series(clean)
+    drawdown = equity / equity.cummax() - 1.0
     return float(drawdown.min())
 
 

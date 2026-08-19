@@ -86,10 +86,17 @@ def test_earnings_far_out_does_not_flag():
     assert "EARNINGS_SOON" not in _codes(out)
 
 
-def test_drawdown_flag():
-    risk = RiskMetrics(weights={"AAPL": 1.0}, max_drawdown=-0.20)
+def test_drawdown_flag_fires_on_realized():
+    risk = RiskMetrics(weights={"AAPL": 1.0}, realized_drawdown=-0.20)
     out = flags.evaluate(_portfolio(), {}, {}, risk, THRESHOLDS)
     assert "DRAWDOWN" in _codes(out)
+
+
+def test_drawdown_flag_ignores_simulated():
+    # A big *simulated* drawdown is a "could have", not a loss taken -> no breach.
+    risk = RiskMetrics(weights={"AAPL": 1.0}, max_drawdown=-0.44)
+    out = flags.evaluate(_portfolio(), {}, {}, risk, THRESHOLDS)
+    assert "DRAWDOWN" not in _codes(out)
 
 
 def test_flags_sorted_by_severity():

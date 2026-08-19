@@ -118,6 +118,20 @@ def stage_analyze(
         risk_free_rate=float(config.risk_param("risk_free_rate", 0.04)),
         var_confidence=float(config.risk_param("var_confidence", 0.95)),
     )
+    # Realized drawdown from the recorded account-equity (net_liq) curve. snapshot_history
+    # here excludes today (today's snapshot is saved further down), so append today's value
+    # unless a same-day re-run already recorded it. Computed before flags so the DRAWDOWN
+    # breach keys off the loss actually taken, not the simulated one.
+    account_id_early = portfolio.account.account_id
+    equity_curve = [
+        r["net_liq"]
+        for r in store.snapshot_history(account_id_early)
+        if r.get("net_liq") is not None
+    ]
+    if portfolio.account.net_liquidation is not None:
+        equity_curve.append(portfolio.account.net_liquidation)
+    risk_metrics.realized_drawdown = risk.realized_drawdown(equity_curve)
+
     macro_snapshot = macro.gather(config, market)
     the_flags = flags_mod.evaluate(
         portfolio, fundamentals, technicals, risk_metrics, config.risk, today=today

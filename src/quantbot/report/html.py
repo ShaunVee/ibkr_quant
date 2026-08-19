@@ -497,13 +497,20 @@ def _risk(model: ReportModel) -> str:
     beta_badge = '<span class="badge">high</span>' if "HIGH_BETA" in codes else ""
 
     ann_vol = fmt_pct((r.annualized_vol or 0) * 100) if r.annualized_vol else "—"
-    max_dd = fmt_pct((r.max_drawdown or 0) * 100) if r.max_drawdown is not None else "—"
+    realized_dd = fmt_pct((r.realized_drawdown or 0) * 100) if r.realized_drawdown is not None else "—"
+    realized_note = (
+        "worst peak-to-trough of your account"
+        if r.realized_drawdown is not None
+        else "needs a few days of history"
+    )
+    sim_dd = fmt_pct((r.max_drawdown or 0) * 100) if r.max_drawdown is not None else "—"
     var = fmt_pct((r.var_pct or 0) * 100) if r.var_pct else "—"
 
     tiles = f"""
       <div class="tile{beta_crit}">{beta_badge}<div class="k">Beta</div><div class="v num">{escape(fmt_num(r.portfolio_beta))}</div><div class="n">1.0 = moves with market</div></div>
       <div class="tile"><div class="k">Ann. Vol</div><div class="v num">{escape(ann_vol)}</div><div class="n">yearly swing · lower = calmer</div></div>
-      <div class="tile{dd_crit}">{dd_badge}<div class="k">Max Drawdown</div><div class="v num">{escape(max_dd)}</div><div class="n">worst peak-to-trough · smaller better</div></div>
+      <div class="tile{dd_crit}">{dd_badge}<div class="k">Max Drawdown</div><div class="v num">{escape(realized_dd)}</div><div class="n">{escape(realized_note)}</div></div>
+      <div class="tile"><div class="k">Simulated DD</div><div class="v num">{escape(sim_dd)}</div><div class="n">if you'd held today's weights · hypothetical</div></div>
       <div class="tile"><div class="k">1-Day VaR</div><div class="v num">{escape(var)}</div><div class="n">a typical bad day (95%)</div></div>
       <div class="tile"><div class="k">Eff. Positions</div><div class="v num">{escape(fmt_num(r.effective_positions, 1))}</div><div class="n">of {len(model.positions)} held · higher = less concentrated</div></div>"""
 
