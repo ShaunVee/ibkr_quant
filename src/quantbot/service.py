@@ -15,7 +15,7 @@ updates. This is that one process; do not scale it past 1.
 
 Commands (accepted only from the configured TELEGRAM_CHAT_ID):
     /report   run the full pipeline now and send the brief
-    /status   next scheduled run + whether a run is in progress
+    /status   next scheduled run + recorded-data health (snapshot count + latest date)
     /help     list commands
 """
 
@@ -31,7 +31,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from quantbot.config import load_config
 from quantbot.delivery.telegram import TelegramNotifier
+from quantbot.pipeline import _DEFAULT_DB
 from quantbot.scheduler import make_trigger, run_pipeline, schedule_timezone
+from quantbot.storage.db import Store
 
 log = logging.getLogger("quantbot.service")
 
@@ -71,12 +73,13 @@ def _run_and_ack(notifier: TelegramNotifier) -> None:
 class CommandListener:
     """Long-polls Telegram and dispatches owner commands. One instance, one poller."""
 
-    def __init__(self, token: str, chat_id: str, trigger, tz: str) -> None:
+    def __init__(self, token: str, chat_id: str, trigger, tz: str, db_path=_DEFAULT_DB) -> None:
         self._base = f"https://api.telegram.org/bot{token}"
         self._chat_id = str(chat_id)
         self._notifier = TelegramNotifier(token, chat_id)
         self._trigger = trigger
         self._tz = tz
+        self._db_path = db_path
         self._session = requests.Session()
         self._offset: int | None = None
 
@@ -139,7 +142,27 @@ class CommandListener:
     def _status_text(self) -> str:
         now = datetime.now(ZoneInfo(self._tz))
         nxt = self._trigger.get_next_fire_time(None, now)
-        return f"Next scheduled run: {nxt:%Y-%m-%d %H:%M %Z}\nBot is up and listening."
+        lines = [
+            f"Next scheduled run: {nxt:%Y-%m-%d %H:%M %Z}",
+            self._data_line(),
+            "Bot is up and listening.",
+        ]
+        return "\n".join(lines)
+
+    def _data_line(self) -> str:
+        """Snapshot count + latest date, so /status confirms the DB is intact from chat.
+
+        Never let a DB hiccup break /status — degrade to a plain note instead.
+        """
+        try:
+            summary = Store(self._db_path).snapshot_summary()
+        except Exception:  # noqa: BLE001 - status must not crash on a DB read
+            log.warning("could not read snapshot summary for /status", exc_info=True)
+            return "Data: unavailable (DB read failed)"
+        n = summary["count"]
+        if not n:
+            return "Data: no snapshots recorded yet"
+        return f"Data: {n} snapshot{'s' if n != 1 else ''}, latest {summary['latest_date']}"
 
     # --- main loop ---------------------------------------------------------
 

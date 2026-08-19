@@ -31,6 +31,14 @@ def test_save_snapshot_and_history(tmp_path):
     assert history[1][1] == 90000.0  # invested value = 60k + 30k
 
 
+def test_snapshot_summary_counts_and_latest(tmp_path):
+    store = Store(tmp_path / "test.db")
+    assert store.snapshot_summary() == {"count": 0, "latest_date": None}
+    store.save_snapshot(_portfolio(), snapshot_date=date(2026, 8, 10))
+    store.save_snapshot(_portfolio(), snapshot_date=date(2026, 8, 11))
+    assert store.snapshot_summary() == {"count": 2, "latest_date": "2026-08-11"}
+
+
 def test_snapshot_upsert_is_idempotent_per_day(tmp_path):
     store = Store(tmp_path / "test.db")
     store.save_snapshot(_portfolio(), snapshot_date=date(2026, 8, 11))

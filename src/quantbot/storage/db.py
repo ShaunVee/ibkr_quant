@@ -239,6 +239,18 @@ class Store:
         ]
         return records[-limit:] if limit else records
 
+    def snapshot_summary(self) -> dict[str, Any]:
+        """Cheap health check across all accounts: {count, latest_date} for /status.
+
+        `latest_date` is None when nothing has been recorded yet. Account-agnostic on
+        purpose so callers don't need an account_id just to sanity-check the DB.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n, MAX(snapshot_date) AS latest FROM snapshots"
+            ).fetchone()
+        return {"count": row["n"], "latest_date": row["latest"]}
+
     # --- price cache -----------------------------------------------------
     def upsert_prices(self, symbol: str, rows: list[dict[str, Any]]) -> None:
         """rows: list of {date, open, high, low, close, volume}."""
