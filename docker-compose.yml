@@ -1,28 +1,25 @@
 # quantbot on a VPS. The container stays up running the service
 # (src/quantbot/service.py): a scheduler that fires the pipeline every Tue-Sat morning
 # at 07:00 Asia/Singapore (each run caps the prior US session), PLUS a Telegram listener
-# so you can trigger a run any time
-# by sending /report. Deployment is a one-liner and needs no host cron/systemd:
+# so you can trigger a run any time by sending /report. Deployment is a one-liner and
+# needs no host cron/systemd. This file lives at the repo root, so run it with no -f flag:
 #
-#   Deploy / update:  docker compose -f deploy/docker-compose.yml up -d --build
-#   Follow logs:      docker compose -f deploy/docker-compose.yml logs -f
-#   Run once by hand: docker compose -f deploy/docker-compose.yml run --rm quantbot \
-#                       python -m quantbot.pipeline --stage all
-#   Dry run:          docker compose -f deploy/docker-compose.yml run --rm quantbot \
-#                       python -m quantbot.pipeline --dry-run
+#   Deploy / update:  docker compose up -d --build
+#   Follow logs:      docker compose logs -f
+#   Run once by hand: docker compose run --rm quantbot python -m quantbot.pipeline --stage all
+#   Dry run:          docker compose run --rm quantbot python -m quantbot.pipeline --dry-run
 #
 # Do NOT scale this past 1 — two processes polling the same bot token steal each
-# other's updates. The build context is the repo root so the Dockerfile can COPY
-# src/ and config.yaml.
+# other's updates.
 
 services:
   quantbot:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     image: quantbot:latest
     env_file:
-      - ../.env
+      - .env
     environment:
       # Pins the schedule's fire time (and the report "as of" clock) independent
       # of the host's system timezone. Override the schedule without rebuilding via
@@ -38,3 +35,7 @@ services:
 
 volumes:
   quantbot-data:
+    # Pinned to the volume created back when compose lived in deploy/ (project name
+    # was "deploy"), so moving this file to the root keeps the existing DB — daily
+    # snapshots + price cache — mounted instead of silently starting empty.
+    name: deploy_quantbot-data

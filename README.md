@@ -146,13 +146,13 @@ Deploy is one command:
 
 ```bash
 # On the VPS, from the repo root, with .env in place:
-docker compose -f deploy/docker-compose.yml up -d --build     # deploy / update
-docker compose -f deploy/docker-compose.yml logs -f           # watch it (look for "scheduler armed" / "command listener ready")
+docker compose up -d --build     # deploy / update
+docker compose logs -f           # watch it (look for "scheduler armed" / "command listener ready")
 ```
 
 Then just message the bot **`/report`** to verify a real end-to-end run — no need to wait
 for the morning. (Or a one-off from the shell, overriding the service command:
-`docker compose -f deploy/docker-compose.yml run --rm quantbot python -m quantbot.pipeline --dry-run`.)
+`docker compose run --rm quantbot python -m quantbot.pipeline --dry-run`.)
 
 Retune the schedule without rebuilding via env vars (`QUANTBOT_SCHEDULE_DAYS`,
 `QUANTBOT_SCHEDULE_HOUR`, `QUANTBOT_SCHEDULE_MINUTE`, `TZ`) — see the scheduler module.
@@ -164,5 +164,6 @@ instance — two pollers on the same bot token steal each other's commands.
 ## Layout
 
 See `src/quantbot/` — `ingestion/` (brokers, marketdata), `storage/`, `analysis/`,
-`report/`, `delivery/`, and `pipeline.py` (orchestrator). Deployment assets in
-`deploy/`. The full design and rationale live in the approved plan file.
+`report/`, `delivery/`, and `pipeline.py` (orchestrator). Deployment assets
+(`Dockerfile`, `docker-compose.yml`) live at the repo root. The full design and
+rationale live in the approved plan file.
