@@ -77,23 +77,25 @@ def generate(model: ReportModel, config: Config) -> str | None:
         return _fallback(model)
 
     try:
-        return _call_claude(report_text, settings, api_key)
+        return _call_claude(model, report_text, settings, api_key)
     except Exception as exc:  # noqa: BLE001 - never let narrative break the report
         log.warning("Claude narrative failed (%s) — using fallback.", exc)
         return _fallback(model)
 
 
-def _call_claude(report_text: str, settings: dict, api_key: str) -> str:
+def _call_claude(model: ReportModel, report_text: str, settings: dict, api_key: str) -> str:
     import anthropic
 
     client = anthropic.Anthropic(api_key=api_key)
     model_id = settings.get("model", "claude-sonnet-5")
-    max_tokens = int(settings.get("max_tokens", 900))
+    max_tokens = int(settings.get("max_tokens", 4000))
+    effort = settings.get("effort", "high")
 
     response = client.messages.create(
         model=model_id,
         max_tokens=max_tokens,
         system=_SYSTEM,
+        output_config={"effort": effort},
         messages=[
             {
                 "role": "user",
@@ -104,8 +106,12 @@ def _call_claude(report_text: str, settings: dict, api_key: str) -> str:
             }
         ],
     )
+    # On Sonnet 5 adaptive thinking is on by default and shares the max_tokens budget
+    # with the response, so a too-small cap can truncate before any text block is
+    # produced. If that happens, fall back to the deterministic narrative rather than
+    # a useless placeholder.
     text = next((b.text for b in response.content if b.type == "text"), "").strip()
-    return text or _fallback_from_text(report_text)
+    return text or _fallback(model)
 
 
 def _fallback(model: ReportModel) -> str:
@@ -202,7 +208,3 @@ def _fallback(model: ReportModel) -> str:
     else:
         parts.append("No flags breached your thresholds.")
     return " ".join(parts)
-
-
-def _fallback_from_text(_: str) -> str:
-    return "Morning brief generated (narrative model returned no text)."

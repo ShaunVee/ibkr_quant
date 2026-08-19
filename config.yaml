@@ -95,4 +95,5 @@ risk:
 narrative:
   enabled: true
   model: claude-sonnet-5            # claude-sonnet-5 (cheaper) | claude-opus-5
-  max_tokens: 900
+  effort: high                      # low | medium | high | xhigh | max — depth of adaptive thinking
+  max_tokens: 4000                  # ceiling for thinking + brief; you're billed for tokens produced, not the cap
