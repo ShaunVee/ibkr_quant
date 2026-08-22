@@ -459,7 +459,7 @@ def stage_report(config: Config, model: ReportModel) -> ReportModel:
 
 
 def stage_deliver(config: Config, model: ReportModel, store: Store) -> None:
-    from quantbot.delivery.telegram import TelegramNotifier
+    from quantbot.delivery.telegram import AmbiguousDeliveryError, TelegramNotifier
     from quantbot.report import html as html_mod
 
     mode = config.delivery  # html | text
@@ -489,7 +489,20 @@ def stage_deliver(config: Config, model: ReportModel, store: Store) -> None:
             )
             log.info("Report delivered to Telegram (HTML document).")
             return
-        except Exception as exc:  # noqa: BLE001 - degrade to text on any send issue
+        except AmbiguousDeliveryError as exc:
+            # The upload almost certainly landed (and is archived to reports_dir).
+            # Retrying would duplicate it and dumping the full text brief would spam
+            # a second copy — so just note the hiccup and stop.
+            log.warning(
+                "HTML document delivery ambiguous (%s); file likely delivered and is "
+                "archived at %s.", exc, html_path,
+            )
+            notifier.send(
+                "📄 Morning brief uploaded — Telegram was slow to confirm. "
+                "If the file didn't arrive, it's saved to the archive."
+            )
+            return
+        except Exception as exc:  # noqa: BLE001 - degrade to text on a real send failure
             log.warning("HTML document delivery failed (%s); falling back to text brief.", exc)
 
     notifier.send(formatter.format_telegram_html(model))

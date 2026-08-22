@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from quantbot.delivery import telegram
-from quantbot.delivery.telegram import TelegramNotifier
+from quantbot.delivery.telegram import AmbiguousDeliveryError, TelegramNotifier
 
 
 class _Resp:
@@ -58,17 +58,46 @@ def test_send_retries_after_timeout():
     assert len(session.calls) == 2
 
 
-def test_send_document_retries_and_rewinds_file(tmp_path):
+def test_send_document_rewinds_file_before_retry(tmp_path):
+    # Documents are non-idempotent, so only a 429 (request rejected, not processed) is
+    # retried. When it is, the multipart body must restart from byte 0.
     doc = tmp_path / "brief.html"
     doc.write_text("<html>hi</html>")
-    session = _Session([requests.exceptions.ConnectionError("boom"), _Resp()])
+    session = _Session([
+        _Resp(status_code=429, payload={"parameters": {"retry_after": 0}}),
+        _Resp(),
+    ])
     notifier = TelegramNotifier("t", "42", session=session)
 
     notifier.send_document(doc, "caption")
 
     assert len(session.calls) == 2
-    # The retry must start from byte 0 even though attempt 1 read the body to EOF.
     assert session.calls[1]["file_pos"] == 0
+
+
+def test_send_document_does_not_retry_on_504(tmp_path):
+    # A 504 likely means the upload was processed; retrying would duplicate the file.
+    doc = tmp_path / "brief.html"
+    doc.write_text("<html>hi</html>")
+    session = _Session([_Resp(status_code=504, text="Gateway Timeout")])
+    notifier = TelegramNotifier("t", "42", session=session)
+
+    with pytest.raises(AmbiguousDeliveryError):
+        notifier.send_document(doc, "caption")
+    assert len(session.calls) == 1  # no retry — no duplicate delivery
+
+
+def test_send_document_ambiguous_on_network_error(tmp_path):
+    # A dropped connection on a non-idempotent upload is "delivery uncertain", not a
+    # clean failure — surface it as AmbiguousDeliveryError without retrying.
+    doc = tmp_path / "brief.html"
+    doc.write_text("<html>hi</html>")
+    session = _Session([requests.exceptions.ConnectionError("boom")])
+    notifier = TelegramNotifier("t", "42", session=session)
+
+    with pytest.raises(AmbiguousDeliveryError):
+        notifier.send_document(doc, "caption")
+    assert len(session.calls) == 1
 
 
 def test_gives_up_after_max_attempts():

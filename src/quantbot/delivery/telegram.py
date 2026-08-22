@@ -31,6 +31,13 @@ _BACKOFF_BASE = 3.0  # seconds; multiplied by the attempt number
 _RETRYABLE_EXC = (requests.exceptions.Timeout, requests.exceptions.ConnectionError)
 
 
+class AmbiguousDeliveryError(Exception):
+    """A non-idempotent request (a document upload) failed *after* the server most
+    likely accepted it — a 504 gateway timeout, a read timeout, or a dropped response.
+    Retrying would duplicate the delivery, so we stop and signal "probably delivered"
+    to the caller, which must NOT degrade to a full resend."""
+
+
 class TelegramNotifier(Notifier):
     def __init__(
         self,
@@ -65,6 +72,7 @@ class TelegramNotifier(Notifier):
                 self._document_url,
                 what="sendDocument",
                 timeout=_DOCUMENT_TIMEOUT,
+                idempotent=False,
                 data={
                     "chat_id": self._chat_id,
                     "caption": caption[:_CAPTION_LIMIT],
@@ -86,10 +94,17 @@ class TelegramNotifier(Notifier):
             },
         )
 
-    def _post(self, url: str, *, what: str, timeout: int, **kwargs) -> requests.Response:
+    def _post(
+        self, url: str, *, what: str, timeout: int, idempotent: bool = True, **kwargs
+    ) -> requests.Response:
         """POST with retry/backoff. Retries transient network errors, Telegram 5xx, and
         429 (honoring retry_after); raises on a non-retryable 4xx or after exhausting
-        attempts, so callers can degrade (e.g. HTML doc -> text) only on real failure."""
+        attempts, so callers can degrade (e.g. HTML doc -> text) only on real failure.
+
+        When `idempotent` is False (document uploads), a network error or 5xx is treated
+        as "probably already delivered": we raise AmbiguousDeliveryError instead of
+        retrying, because a retry would duplicate the upload. Only a 429 (which means the
+        request was rejected, not processed) is still safe to retry."""
         last_exc: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
             _rewind_files(kwargs.get("files"))  # multipart bodies must restart each try
@@ -101,6 +116,10 @@ class TelegramNotifier(Notifier):
                     "Telegram %s attempt %d/%d failed: %s",
                     what, attempt, self._max_attempts, exc,
                 )
+                if not idempotent:
+                    raise AmbiguousDeliveryError(
+                        f"{what} network error, delivery uncertain: {exc}"
+                    ) from exc
             else:
                 if resp.status_code == 200:
                     return resp
@@ -114,6 +133,12 @@ class TelegramNotifier(Notifier):
                         "Telegram %s got %d (attempt %d/%d): %s",
                         what, resp.status_code, attempt, self._max_attempts, resp.text,
                     )
+                    if not idempotent:
+                        # A 504/5xx on a non-idempotent upload means the backend very
+                        # likely processed it; retrying just duplicates the file.
+                        raise AmbiguousDeliveryError(
+                            f"{what} got {resp.status_code}, delivery likely succeeded"
+                        )
                 else:
                     # 4xx (bad request, forbidden, …) won't fix itself — fail fast.
                     log.error("Telegram %s failed (%s): %s", what, resp.status_code, resp.text)
