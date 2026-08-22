@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from quantbot.ingestion.brokers.ibkr_flex import (
@@ -78,6 +80,8 @@ def test_parse_statement_holdings():
     assert portfolio.account.base_currency == "USD"
     assert portfolio.account.net_liquidation == pytest.approx(152340.55)
     assert portfolio.account.total_cash == pytest.approx(12500.00)
+    # The session the statement reflects, from IBKR's own reportDate (not wall-clock).
+    assert portfolio.report_date == date(2026, 7, 31)
 
     assert len(portfolio.holdings) == 3
     aapl = next(h for h in portfolio.holdings if h.symbol == "AAPL")
@@ -94,3 +98,24 @@ def test_parse_statement_holdings():
 
     # Total invested value = sum of position values.
     assert portfolio.invested_value == pytest.approx(46030.00 + 42000.00 + 5910.00)
+
+
+STATEMENT_NO_SUMMARY_DATE = """<?xml version="1.0" encoding="UTF-8"?>
+<FlexQueryResponse queryName="quantbot" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U1234567" fromDate="20260731" toDate="20260731">
+      <AccountInformation accountId="U1234567" currency="USD" name="Test Account"/>
+      <OpenPositions>
+        <OpenPosition accountId="U1234567" symbol="AAPL" conid="265598" assetCategory="STK"
+          position="200" markPrice="230.15" positionValue="46030.00"
+          costBasisPrice="150.00" costBasisMoney="30000.00" currency="USD"/>
+      </OpenPositions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>"""
+
+
+def test_parse_statement_report_date_falls_back_to_todate():
+    # No EquitySummary reportDate present -> use the statement's toDate.
+    portfolio = parse_statement(STATEMENT_NO_SUMMARY_DATE)
+    assert portfolio.report_date == date(2026, 7, 31)

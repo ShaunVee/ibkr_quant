@@ -2,7 +2,7 @@
 
 One long-lived process does both jobs:
 
-  * a BackgroundScheduler fires the pipeline on the cron schedule (07:00 SGT weekdays);
+  * a BackgroundScheduler fires the pipeline on the cron schedule (07:00 SGT, Tue-Sun);
   * the main thread long-polls Telegram so you can trigger a run any time with /report.
 
 Both paths call :func:`quantbot.scheduler.run_pipeline`, which serializes them behind a

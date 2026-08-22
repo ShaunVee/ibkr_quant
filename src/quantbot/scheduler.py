@@ -10,9 +10,9 @@ morning — a hang or an unhandled crash — is isolated and cannot take the sch
 the command listener) down with it.
 
 Schedule and timezone come from the environment (defaults = 07:00 Asia/Singapore,
-Tue-Sat), so you can retune without rebuilding the image:
+Tue-Sun), so you can retune without rebuilding the image:
 
-    QUANTBOT_SCHEDULE_DAYS   cron day_of_week   (default "tue-sat")
+    QUANTBOT_SCHEDULE_DAYS   cron day_of_week   (default "tue-sun")
     QUANTBOT_SCHEDULE_HOUR   hour               (default "7")
     QUANTBOT_SCHEDULE_MINUTE minute             (default "0")
     QUANTBOT_TZ / TZ         IANA timezone      (default "Asia/Singapore")
@@ -48,16 +48,18 @@ def schedule_timezone() -> str:
 
 
 def make_trigger() -> CronTrigger:
-    """Build the cron trigger from the environment (defaults: 07:00 SGT, Tue-Sat).
+    """Build the cron trigger from the environment (defaults: 07:00 SGT, Tue-Sun).
 
     Each morning's brief reports the *previous* US session's close, which (in SGT)
     lands the day after. So the week's runs are shifted one day forward from the US
-    trading week: Tue morning covers Mon's close ... Sat morning caps off Fri's close.
-    Sun and Mon are dark — Sat US has no session, and a Mon SGT run would only re-report
-    Fri again — so after Saturday the next run is Tuesday.
+    trading week: Tue morning covers Mon's close ... Sat morning covers Fri's close.
+    But IBKR's Flex batch runs overnight, so at 07:00 SGT Sat (only ~3h after Fri's
+    close) the statement often still reflects Thu — the Sat brief flags itself stale and
+    the Sun run catches up to Fri's finalized close (no Sat/Sun US session, so Sun still
+    reports Fri, cleanly). Mon is dark: a Mon SGT run would only re-report Fri again.
     """
     return CronTrigger(
-        day_of_week=os.environ.get("QUANTBOT_SCHEDULE_DAYS", "tue-sat"),
+        day_of_week=os.environ.get("QUANTBOT_SCHEDULE_DAYS", "tue-sun"),
         hour=os.environ.get("QUANTBOT_SCHEDULE_HOUR", "7"),
         minute=os.environ.get("QUANTBOT_SCHEDULE_MINUTE", "0"),
         timezone=schedule_timezone(),

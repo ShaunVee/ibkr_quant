@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import requests
 
@@ -118,14 +118,22 @@ def parse_statement(xml_text: str) -> Portfolio:
     net_liq = _parse_net_liquidation(stmt)
     total_cash = _parse_total_cash(stmt)
 
+    # The session the numbers actually belong to. IBKR's Flex batch runs overnight, so a
+    # statement fetched shortly after a close often still reflects the *previous* session;
+    # capturing this lets the pipeline label the brief honestly and detect stale data.
+    report_date = _parse_report_date(stmt)
+
+    now = datetime.now(timezone.utc)
     account = AccountSummary(
         account_id=account_id,
         base_currency=base_currency,
         net_liquidation=net_liq,
         total_cash=total_cash,
-        as_of=datetime.now(timezone.utc),
+        as_of=now,
     )
-    return Portfolio(account=account, holdings=holdings, as_of=datetime.now(timezone.utc))
+    return Portfolio(
+        account=account, holdings=holdings, as_of=now, report_date=report_date
+    )
 
 
 def _parse_open_positions(stmt: ET.Element, account_id: str) -> list[Holding]:
@@ -148,6 +156,30 @@ def _parse_open_positions(stmt: ET.Element, account_id: str) -> list[Holding]:
             )
         )
     return holdings
+
+
+def _yyyymmdd(val: str | None) -> date | None:
+    if not val:
+        return None
+    try:
+        return datetime.strptime(val.strip(), "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+def _parse_report_date(stmt: ET.Element) -> date | None:
+    """The trading session the statement reflects.
+
+    Prefer the latest equity-summary ``reportDate`` (the marks/P&L belong to that day);
+    fall back to the statement's ``toDate``. Both are IBKR's ``YYYYMMDD`` format.
+    """
+    rows = stmt.findall(".//EquitySummaryByReportDateInBase")
+    if not rows:
+        rows = stmt.findall(".//EquitySummaryInBase")
+    dates = [d for r in rows if (d := _yyyymmdd(r.get("reportDate"))) is not None]
+    if dates:
+        return max(dates)
+    return _yyyymmdd(stmt.get("toDate"))
 
 
 def _parse_net_liquidation(stmt: ET.Element) -> float | None:

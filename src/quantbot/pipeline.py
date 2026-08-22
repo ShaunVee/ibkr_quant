@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -44,7 +44,7 @@ from quantbot.analysis import (
 from quantbot.config import Config, load_config
 from quantbot.ingestion.brokers.factory import make_broker
 from quantbot.ingestion.marketdata.composite import MarketData
-from quantbot.models import Portfolio, TechnicalSnapshot
+from quantbot.models import Flag, Portfolio, TechnicalSnapshot
 from quantbot.report import builder, formatter, narrative
 from quantbot.report.builder import ReportModel
 from quantbot.storage.db import Store
@@ -80,6 +80,52 @@ def _local_today(config: Config) -> date:
     return datetime.now(tz).date()
 
 
+def _prior_trading_day(run_date: date) -> date:
+    """The most recent weekday before ``run_date`` — the freshest US session we can
+    expect a morning run to reflect. Skips Sat/Sun so a Sun run correctly expects Fri
+    (not a non-existent Sat session). US market holidays aren't modelled here.
+    """
+    d = run_date - timedelta(days=1)
+    while d.weekday() >= 5:  # 5 = Sat, 6 = Sun
+        d -= timedelta(days=1)
+    return d
+
+
+def _staleness_flag(report_date: date | None, run_date: date) -> Flag | None:
+    """Warn when the statement is older than the last completed trading session.
+
+    IBKR's Flex batch runs overnight, so a morning fetch can still return the *previous*
+    session (most visibly a Sat run serving Thu instead of Fri). We compare the report
+    date against the last weekday before the run: if it's behind that, the P&L/marks are
+    older than they look and we surface it rather than pass them off as current. A US
+    market holiday can trip this benignly, hence the soft wording.
+    """
+    if report_date is None:
+        return Flag(
+            code="DATA_DATE_UNKNOWN",
+            severity="warn",
+            symbol=None,
+            message=(
+                "Broker statement carried no report date — can't confirm which session "
+                "this P&L reflects."
+            ),
+        )
+    expected = _prior_trading_day(run_date)
+    if report_date >= expected:
+        return None
+    return Flag(
+        code="STALE_DATA",
+        severity="warn",
+        symbol=None,
+        message=(
+            f"Portfolio data is as of {report_date.isoformat()}, but the last completed "
+            f"session was {expected.isoformat()}. IBKR likely hasn't finalized the "
+            "latest session yet (or it was a US holiday) — P&L and prices reflect the "
+            "older day's close."
+        ),
+    )
+
+
 # --- stages ---------------------------------------------------------------
 def stage_ingest(config: Config) -> Portfolio:
     broker = make_broker(config)
@@ -91,13 +137,29 @@ def stage_ingest(config: Config) -> Portfolio:
         portfolio.invested_value,
         portfolio.account.base_currency,
     )
+    # Log the session the statement reflects vs. the day we ran, so the Flex batch-lag
+    # turnover time is visible in `docker logs` (used to tune the schedule hour).
+    run_date = _local_today(config)
+    report_date = portfolio.report_date
+    log.info(
+        "Statement report_date=%s, run_date=%s (lag %s day(s))",
+        report_date.isoformat() if report_date else "unknown",
+        run_date.isoformat(),
+        (run_date - report_date).days if report_date else "?",
+    )
     return portfolio
 
 
 def stage_analyze(
     config: Config, portfolio: Portfolio, market: MarketData, store: Store
 ) -> ReportModel:
-    today = _local_today(config)
+    run_date = _local_today(config)
+    # Key the whole brief off the session IBKR's statement actually reflects, not the
+    # wall-clock day we happen to run. The Flex batch runs overnight, so a morning fetch
+    # frequently still returns the *previous* session (most visibly on Sat, which would
+    # otherwise claim to be Fri's close while serving Thu's). Falling back to run_date
+    # keeps behaviour unchanged when the broker doesn't report a date.
+    today = portfolio.report_date or run_date
 
     # Prices: fetch, cache to SQLite, build DataFrames for TA + risk.
     price_frames: dict[str, pd.DataFrame] = {}
@@ -136,6 +198,9 @@ def stage_analyze(
     the_flags = flags_mod.evaluate(
         portfolio, fundamentals, technicals, risk_metrics, config.risk, today=today
     )
+    stale_flag = _staleness_flag(portfolio.report_date, run_date)
+    if stale_flag is not None:
+        the_flags.insert(0, stale_flag)
 
     # --- change/memory layer: contextualize today's move, diff flags vs last run ---
     account_id = portfolio.account.account_id

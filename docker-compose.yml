@@ -1,5 +1,5 @@
 # quantbot on a VPS. The container stays up running the service
-# (src/quantbot/service.py): a scheduler that fires the pipeline every Tue-Sat morning
+# (src/quantbot/service.py): a scheduler that fires the pipeline every Tue-Sun morning
 # at 07:00 Asia/Singapore (each run caps the prior US session), PLUS a Telegram listener
 # so you can trigger a run any time by sending /report. Deployment is a one-liner and
 # needs no host cron/systemd. This file lives at the repo root, so run it with no -f flag:

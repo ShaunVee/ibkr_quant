@@ -61,6 +61,10 @@ class Portfolio:
     account: AccountSummary
     holdings: list[Holding] = field(default_factory=list)
     as_of: datetime = field(default_factory=_utcnow)
+    # The trading session the statement actually reflects (from IBKR's own report date),
+    # as opposed to `as_of`, which is when we fetched it. None if the broker didn't say.
+    # This is the session the P&L/marks belong to — the brief keys off it, not wall-clock.
+    report_date: date | None = None
 
     @property
     def equity_holdings(self) -> list[Holding]:
