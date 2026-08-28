@@ -38,4 +38,8 @@ volumes:
     # Pinned to the volume created back when compose lived in deploy/ (project name
     # was "deploy"), so moving this file to the root keeps the existing DB — daily
     # snapshots + price cache — mounted instead of silently starting empty.
+    # `external` = Compose reuses this pre-existing volume as-is (no project-ownership
+    # relabel, no auto-create). On a fresh host, create it first:
+    #   docker volume create deploy_quantbot-data
     name: deploy_quantbot-data
+    external: true
