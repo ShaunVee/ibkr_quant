@@ -94,6 +94,11 @@ class Config:
     def drivers(self) -> dict[str, Any]:
         return self.raw.get("drivers", {})
 
+    @property
+    def fundamental_overrides(self) -> dict[str, dict[str, Any]]:
+        """Per-symbol manual fundamentals (e.g. sector for ETFs yfinance leaves blank)."""
+        return self.raw.get("fundamentals", {}).get("overrides", {}) or {}
+
     def risk_param(self, key: str, default: Any = None) -> Any:
         return self.risk.get(key, default)
 

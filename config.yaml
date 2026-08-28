@@ -24,6 +24,15 @@ providers:
     econ_calendar: finnhub          # finnhub | (future) fmp
     news: finnhub                   # finnhub (free company-news) | (blank to disable)
 
+# Manual fundamentals. yfinance leaves `sector` (and other fields) blank for many ETFs,
+# which shows up as "Unknown" in the sector breakdown. Set values here per-symbol to fill
+# the gap or correct a mislabel — any Fundamentals field works (sector, industry, beta,
+# name, ...), and an override always wins over the provider. Symbols are case-insensitive.
+fundamentals:
+  overrides:
+    ETHA:
+      sector: Crypto ETFs
+
 # Rolling window (calendar days) of daily prices to pull for TA / risk math.
 history_days: 400
 

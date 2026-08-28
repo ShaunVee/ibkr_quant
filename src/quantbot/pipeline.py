@@ -176,7 +176,9 @@ def stage_analyze(
             price_frames[h.symbol] = df
         technicals[h.symbol] = technical.compute(h.symbol, df)
 
-    fundamentals = fundamental.gather(portfolio, market)
+    fundamentals = fundamental.gather(
+        portfolio, market, overrides=config.fundamental_overrides
+    )
 
     risk_metrics = risk.compute(
         portfolio,
