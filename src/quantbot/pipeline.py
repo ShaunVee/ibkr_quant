@@ -92,13 +92,15 @@ def _prior_trading_day(run_date: date) -> date:
 
 
 def _staleness_flag(report_date: date | None, run_date: date) -> Flag | None:
-    """Warn when the statement is older than the last completed trading session.
+    """Warn only when the statement is *abnormally* stale.
 
-    IBKR's Flex batch runs overnight, so a morning fetch can still return the *previous*
-    session (most visibly a Sat run serving Thu instead of Fri). We compare the report
-    date against the last weekday before the run: if it's behind that, the P&L/marks are
-    older than they look and we surface it rather than pass them off as current. A US
-    market holiday can trip this benignly, hence the soft wording.
+    IBKR's Flex batch runs overnight, so a morning fetch routinely returns the session
+    before the last completed one (most visibly a Sat run serving Thu instead of Fri).
+    That one-session lag is a permanent property of how IBKR publishes data, not a
+    problem worth repeating in every brief — so we tolerate it silently. We only flag
+    when the report date is behind by *more* than that expected lag (a stuck/broken
+    Flex feed), which is genuinely worth someone's attention. A US market holiday can
+    still trip this benignly, hence the soft wording.
     """
     if report_date is None:
         return Flag(
@@ -110,8 +112,11 @@ def _staleness_flag(report_date: date | None, run_date: date) -> Flag | None:
                 "this P&L reflects."
             ),
         )
+    # The freshest session we can *reasonably* expect after the overnight batch lag is
+    # the one before the last completed session; anything at or after that is normal.
     expected = _prior_trading_day(run_date)
-    if report_date >= expected:
+    tolerated = _prior_trading_day(expected)
+    if report_date >= tolerated:
         return None
     return Flag(
         code="STALE_DATA",
@@ -119,9 +124,9 @@ def _staleness_flag(report_date: date | None, run_date: date) -> Flag | None:
         symbol=None,
         message=(
             f"Portfolio data is as of {report_date.isoformat()}, but the last completed "
-            f"session was {expected.isoformat()}. IBKR likely hasn't finalized the "
-            "latest session yet (or it was a US holiday) — P&L and prices reflect the "
-            "older day's close."
+            f"session was {expected.isoformat()} — that's further behind than IBKR's "
+            "usual overnight batch lag. The Flex feed may be stuck (or it was a US "
+            "holiday); P&L and prices reflect an older day's close."
         ),
     )
 

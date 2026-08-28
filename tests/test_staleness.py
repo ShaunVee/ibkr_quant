@@ -1,8 +1,9 @@
 """The morning-brief staleness guard — no network involved.
 
 Covers the IBKR Flex overnight-batch lag that made Saturday briefs report Thursday's
-close: the pipeline should key off the statement's real session date and flag data that
-is older than the session we'd expect that morning.
+close: the pipeline keys off the statement's real session date, tolerates the one-
+session lag that lag inherently produces (a known IBKR limitation), and flags only data
+that is *further* behind than that — a sign the feed is actually stuck.
 """
 
 from __future__ import annotations
@@ -28,13 +29,21 @@ def test_sunday_run_reporting_friday_is_fresh():
     assert _staleness_flag(date(2026, 8, 21), run_date=date(2026, 8, 23)) is None
 
 
-def test_stale_data_flagged():
-    # Saturday run (22nd) still serving Thursday's (20th) close -> 2 days old.
-    flag = _staleness_flag(date(2026, 8, 20), run_date=date(2026, 8, 22))
+def test_one_session_batch_lag_not_flagged():
+    # Saturday run (22nd) serving Thursday's (20th) close: the report is one session
+    # behind the expected Friday, which is IBKR's permanent overnight-batch lag. That's
+    # a known limitation, not news, so it must NOT be flagged in every brief.
+    assert _staleness_flag(date(2026, 8, 20), run_date=date(2026, 8, 22)) is None
+
+
+def test_abnormally_stale_data_flagged():
+    # Saturday run (22nd) still serving Wednesday's (19th) close: two sessions behind
+    # the expected Friday, further than the normal batch lag -> the feed looks stuck.
+    flag = _staleness_flag(date(2026, 8, 19), run_date=date(2026, 8, 22))
     assert flag is not None
     assert flag.code == "STALE_DATA"
     assert flag.severity == "warn"
-    assert "2026-08-20" in flag.message
+    assert "2026-08-19" in flag.message
 
 
 def test_missing_report_date_flagged():
