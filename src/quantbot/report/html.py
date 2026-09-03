@@ -14,7 +14,6 @@ from html import escape
 from quantbot.report.builder import ReportModel
 from quantbot.report.numfmt import (
     abbr_money,
-    fmt_money,
     fmt_num,
     fmt_pct,
     signed_full_money,
@@ -294,7 +293,6 @@ def _money(model: ReportModel) -> str:
     m = model.money
     if m is None:
         return ""
-    cur = model.base_currency
 
     tiles = ""
     for w in m.windows:

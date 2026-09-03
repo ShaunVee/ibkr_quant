@@ -1,0 +1,29 @@
+# CI: run the unit suite and lint on every push to main and every PR.
+# Kept deliberately minimal — the bot is a single-user production service, so a fast
+# fail-fast check (pytest + ruff) is the safety net for regressions.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests
+        run: pytest -q

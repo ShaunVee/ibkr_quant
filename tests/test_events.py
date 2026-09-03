@@ -10,7 +10,6 @@ import pandas as pd
 from quantbot.analysis import events
 from quantbot.models import Fundamentals
 
-
 TODAY = date(2024, 6, 3)  # a Monday
 
 

@@ -7,7 +7,7 @@ methods degrade to empty results on failure so the report still generates.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from quantbot.ingestion.marketdata.base import (
     EarningsProvider,
@@ -94,7 +94,7 @@ class FinnhubProvider(EarningsProvider, EconCalendarProvider, NewsProvider):
             when = None
             if ts:
                 try:
-                    when = datetime.fromtimestamp(int(ts), tz=timezone.utc).date()
+                    when = datetime.fromtimestamp(int(ts), tz=UTC).date()
                 except (ValueError, OSError, OverflowError):
                     when = None
             headline = (item.get("headline") or "").strip()

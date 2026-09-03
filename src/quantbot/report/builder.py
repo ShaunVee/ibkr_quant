@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
+from quantbot.analysis import technical
 from quantbot.analysis.benchmark import BenchmarkModel
 from quantbot.analysis.changes import FlagChange
 from quantbot.analysis.contribution import ContributionModel
@@ -21,7 +22,6 @@ from quantbot.analysis.movement import MoveContext
 from quantbot.analysis.risk import RiskMetrics
 from quantbot.analysis.stress import StressModel
 from quantbot.analysis.trends import TrendModel
-from quantbot.analysis import technical
 from quantbot.models import Flag, Fundamentals, Portfolio, TechnicalSignal, TechnicalSnapshot
 
 

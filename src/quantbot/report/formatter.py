@@ -14,11 +14,23 @@ from html import escape
 from quantbot.report.builder import ReportModel
 from quantbot.report.numfmt import (
     abbr_money as _abbr_money,
+)
+from quantbot.report.numfmt import (
     fmt_money as _fmt_money,
+)
+from quantbot.report.numfmt import (
     fmt_num as _fmt_num,
+)
+from quantbot.report.numfmt import (
     fmt_pct as _fmt_pct,
+)
+from quantbot.report.numfmt import (
     signed_full_money as _signed_full_money,
+)
+from quantbot.report.numfmt import (
     signed_money as _signed_money,
+)
+from quantbot.report.numfmt import (
     signed_pct as _signed_pct,
 )
 
@@ -82,7 +94,7 @@ def _render_table(t: _Table) -> list[str]:
     return lines
 
 
-def _trend_metric(md: "object") -> tuple[str, str, str]:
+def _trend_metric(md: object) -> tuple[str, str, str]:
     """Map a MetricDrift to (label, start_str, end_str) for the Trends readout.
 
     Herfindahl is shown as effective positions (1/H) — more intuitive than the raw index
@@ -109,7 +121,7 @@ _KIND_PHRASE = {
 }
 
 
-def _attribution_line(a: "object") -> str | None:
+def _attribution_line(a: object) -> str | None:
     """One-liner for a driver attribution, e.g.
     'SLV +3.1% — silver +2.8% (β1.02) → mostly the theme (residual +0.2pp)'.
 
@@ -126,7 +138,7 @@ def _attribution_line(a: "object") -> str | None:
     return f"{head} — {a.theme} {_signed_pct(a.driver_ret_pct)} ({beta}){tail}"
 
 
-def _risk_gloss(r: "object") -> str:
+def _risk_gloss(r: object) -> str:
     """One plain-English sentence translating the risk grid into felt terms."""
     bits: list[str] = []
     if r.portfolio_beta is not None:

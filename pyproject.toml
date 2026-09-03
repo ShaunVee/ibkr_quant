@@ -39,5 +39,16 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.ruff]
-line-length = 100
+# 120 matches how the codebase is actually written (prose docstrings and f-strings
+# routinely land in the 100–120 range).
+line-length = 120
 target-version = "py311"
+
+[tool.ruff.lint]
+# Explicit contract (ruff's defaults have expanded over versions — pin it so CI is
+# stable): pycodestyle, pyflakes, import sorting, pyupgrade, bugbear.
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Embedded CSS/HTML template literals can't be wrapped without breaking the markup.
+"src/quantbot/report/html.py" = ["E501"]

@@ -22,9 +22,9 @@ cheap theme-ETF pulls; layer B degrades to nothing when no news provider is conf
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Callable
 
 import numpy as np
 import pandas as pd

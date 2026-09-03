@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from datetime import date
+
+import pytest
 
 from quantbot import service
 from quantbot.models import AccountSummary, Holding, Portfolio

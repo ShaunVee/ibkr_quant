@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import time
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import requests
 
@@ -123,7 +123,7 @@ def parse_statement(xml_text: str) -> Portfolio:
     # capturing this lets the pipeline label the brief honestly and detect stale data.
     report_date = _parse_report_date(stmt)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     account = AccountSummary(
         account_id=account_id,
         base_currency=base_currency,

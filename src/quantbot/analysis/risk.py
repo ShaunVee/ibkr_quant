@@ -95,7 +95,7 @@ def portfolio_return_series(
     silently under-weights the whole book toward whichever names have the longest history.
     """
     return_cols = {}
-    for symbol, w in weights.items():
+    for symbol, _w in weights.items():
         df = price_frames.get(symbol)
         if df is None or df.empty or "close" not in df.columns:
             continue

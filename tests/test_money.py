@@ -94,7 +94,7 @@ def test_winners_and_losers_split_and_ranked():
     m = money.compute(invested_value=100_000.0, currency="USD", holdings=holdings)
     assert m is not None
     assert [w.symbol for w in m.winners] == ["SLV", "AAPL"]      # biggest gain first
-    assert [l.symbol for l in m.losers] == ["FIG"]
+    assert [h.symbol for h in m.losers] == ["FIG"]
     assert round(m.total_unrealized) == 1600                     # 2100 + 900 - 1400
     # Percent is against cost basis: SLV +2,100 on 10,000 = +21%.
     assert round(m.winners[0].pct) == 21
