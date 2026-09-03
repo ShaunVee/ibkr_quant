@@ -98,7 +98,13 @@ def generate(model: ReportModel, config: Config) -> str | None:
 def _call_claude(model: ReportModel, report_text: str, settings: dict, api_key: str) -> str:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
+    # Explicit timeout + bounded retries: a hung API call would otherwise eat into the
+    # scheduled run's budget (generate() degrades to the deterministic fallback anyway).
+    client = anthropic.Anthropic(
+        api_key=api_key,
+        timeout=float(settings.get("timeout_s", 60)),
+        max_retries=int(settings.get("max_retries", 2)),
+    )
     model_id = settings.get("model", "claude-sonnet-5")
     max_tokens = int(settings.get("max_tokens", 4000))
     effort = settings.get("effort", "high")

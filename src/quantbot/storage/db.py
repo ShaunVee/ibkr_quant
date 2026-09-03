@@ -55,10 +55,13 @@ CREATE TABLE IF NOT EXISTS prices (
 CREATE TABLE IF NOT EXISTS reports (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     snapshot_date TEXT NOT NULL,
-    format        TEXT NOT NULL,                -- 'markdown' | 'text'
+    format        TEXT NOT NULL,                -- 'html' | 'markdown' | 'narrative'
     body          TEXT NOT NULL,
     created_at    TEXT NOT NULL
 );
+-- One row per (day, format): a same-day re-run replaces rather than duplicates.
+-- The unique index is created by _migrate_reports_dedup AFTER collapsing any
+-- duplicates that pre-index databases accumulated.
 
 CREATE TABLE IF NOT EXISTS flag_history (
     snapshot_date TEXT NOT NULL,               -- ISO date (one run per day)
@@ -86,15 +89,42 @@ class Store:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        # WAL lets the /status listener read while the pipeline subprocess writes (a
+        # busy_timeout of 5s absorbs the remaining write-write collisions); journal_mode
+        # is persistent per database file, busy_timeout is per connection.
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
         try:
             yield conn
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
     def _init_schema(self) -> None:
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate_reports_dedup(conn)
+
+    @staticmethod
+    def _migrate_reports_dedup(conn: sqlite3.Connection) -> None:
+        """Collapse pre-unique-index duplicate reports, keeping the newest per
+        (snapshot_date, format). No-op on databases that were born with the index —
+        the DELETE finds nothing to remove and the CREATE INDEX is a no-op."""
+        conn.execute(
+            """
+            DELETE FROM reports
+            WHERE id NOT IN (
+                SELECT MAX(id) FROM reports GROUP BY snapshot_date, format
+            )
+            """
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_reports_date_format "
+            "ON reports (snapshot_date, format)"
+        )
 
     # --- snapshots -------------------------------------------------------
     def save_snapshot(
@@ -278,12 +308,24 @@ class Store:
 
     # --- reports ---------------------------------------------------------
     def save_report(self, snapshot_date: date, fmt: str, body: str) -> None:
+        """Upsert one (day, format) report — a same-day re-run replaces the row."""
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO reports (snapshot_date, format, body, created_at) "
-                "VALUES (?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(snapshot_date, format) DO UPDATE SET "
+                "body=excluded.body, created_at=excluded.created_at",
                 (snapshot_date.isoformat(), fmt, body, datetime.now().isoformat()),
             )
+
+    def get_report(self, snapshot_date: date, fmt: str) -> str | None:
+        """The stored report body for (day, format), or None when absent."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT body FROM reports WHERE snapshot_date=? AND format=?",
+                (snapshot_date.isoformat(), fmt),
+            ).fetchone()
+        return row["body"] if row else None
 
     # --- flag history (the memory layer) ---------------------------------
     def save_flags(

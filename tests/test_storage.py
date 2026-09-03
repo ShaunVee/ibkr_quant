@@ -63,3 +63,57 @@ def test_price_cache_roundtrip(tmp_path):
     got = store.get_prices("AAPL")
     assert len(got) == 2
     assert got[0]["close"] == 9.9
+
+
+# --- reports (upsert + narrative cache) -----------------------------------
+
+def test_save_report_upserts_per_day_and_format(tmp_path):
+    store = Store(tmp_path / "test.db")
+    d = date(2026, 8, 11)
+    store.save_report(d, "html", "<html>v1</html>")
+    store.save_report(d, "markdown", "v1")
+    store.save_report(d, "html", "<html>v2</html>")  # same day+format again
+    store.save_report(date(2026, 8, 12), "html", "<html>next</html>")
+
+    with store._conn() as conn:
+        rows = conn.execute("SELECT snapshot_date, format, body FROM reports").fetchall()
+    assert len(rows) == 3  # replaced, not duplicated
+    assert store.get_report(d, "html") == "<html>v2</html>"
+    assert store.get_report(d, "markdown") == "v1"
+    assert store.get_report(d, "narrative") is None
+
+
+def test_migration_collapses_pre_existing_report_duplicates(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "legacy.db"
+    # Build a legacy database: reports table WITHOUT the unique index, already
+    # carrying same-day duplicates (what pre-fix re-runs produced).
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE reports (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "snapshot_date TEXT NOT NULL, format TEXT NOT NULL, "
+        "body TEXT NOT NULL, created_at TEXT NOT NULL)"
+    )
+    conn.executemany(
+        "INSERT INTO reports (snapshot_date, format, body, created_at) VALUES (?, ?, ?, ?)",
+        [
+            ("2026-08-11", "html", "old", "t1"),
+            ("2026-08-11", "html", "newest", "t2"),
+            ("2026-08-11", "markdown", "md", "t3"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    store = Store(db)  # opening runs the dedupe + unique index migration
+    with store._conn() as conn:
+        rows = conn.execute(
+            "SELECT body FROM reports WHERE snapshot_date='2026-08-11' AND format='html'"
+        ).fetchall()
+    assert len(rows) == 1
+    # The kept row is the latest insert.
+    assert rows[0]["body"] == "newest"
+    # And the upsert path works on the migrated table.
+    store.save_report(date(2026, 8, 11), "html", "v3")
+    assert store.get_report(date(2026, 8, 11), "html") == "v3"

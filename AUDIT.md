@@ -87,9 +87,9 @@ Solid suite (155, fast, offline). Gaps worth closing when convenient:
 | 1 | Price-cache fallback + delta fetch (2.1) | M | High | ✅ Done 2026-09-03 (`_fetch_prices` in pipeline.py) |
 | 2 | Brief: novelty rule + length fix (4.1–4.2) | S | High | ✅ Done 2026-09-03 (narrative.py system prompt) |
 | 3 | CI workflow (pytest + ruff) (3) | S | High | ✅ Done 2026-09-03 (.github/workflows/ci.yml) |
-| 4 | Claude client timeout + narrative cache (2.2, 4.4) | S | Med | |
-| 5 | reports upsert + comment fix (1.3) | S | Med | |
-| 6 | Deterministic caption lines (4.3) | S | Med | |
-| 7 | WAL/busy_timeout, non-root Docker, lockfile (1.4, 2.3–2.4) | S | Med | |
+| 4 | Claude client timeout + narrative cache (2.2, 4.4) | S | Med | ✅ Done 2026-09-03 (`anthropic.Anthropic(timeout=60, max_retries=2)`; narrative cached per day in `reports` via `stage_report(config, model, store)`) |
+| 5 | reports upsert + comment fix (1.3) | S | Med | ✅ Done 2026-09-03 (unique index + dedupe migration for legacy DBs; `save_report` upserts; `get_report` added; comment now `'html' | 'markdown' | 'narrative'`) |
+| 6 | Deterministic caption lines (4.3) | S | Med | ✅ Done 2026-09-03 (`format_caption` prepends today's move + σ tag and the vs-index dollar figure before the narrative teaser) |
+| 7 | WAL/busy_timeout, non-root Docker, lockfile (1.4, 2.3–2.4) | S | Med | ✅ Done 2026-09-03 (`_conn`: WAL + busy_timeout=5000 + rollback on error; Dockerfile: non-root uid 1000 + HEALTHCHECK + installs from `requirements.lock`; lock generated via `scripts/make_lock.py`. Note: the existing `deploy_quantbot-data` volume is root-owned — one-time `chown 1000:1000` needed, see Dockerfile comment) |
 | 8 | `_catalysts` date fix (1.1), dry-run doc/flag (1.2), dead code (1.5) | S | Low | `_catalysts` fixed alongside #1 |
 | 9 | Refactor `stage_analyze`, publicize `_DEFAULT_DB` (3) | M | Low | |

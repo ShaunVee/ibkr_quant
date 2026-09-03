@@ -591,8 +591,18 @@ def _num(val) -> float | None:
     return float(val)
 
 
-def stage_report(config: Config, model: ReportModel) -> ReportModel:
+def stage_report(config: Config, model: ReportModel, store: Store) -> ReportModel:
+    # Narrative cache: a same-day re-run (/report from Telegram) works from identical
+    # numbers, so reuse the stored brief instead of paying for a fresh Claude call.
+    today = model.as_of
+    cached = store.get_report(today, "narrative")
+    if cached:
+        model.narrative = cached
+        return model
+
     model.narrative = narrative.generate(model, config)
+    if model.narrative and config.narrative.get("enabled", True):
+        store.save_report(today, "narrative", model.narrative)
     return model
 
 
@@ -674,7 +684,7 @@ def _run_full(config: Config, args) -> int:
         market = MarketData(config)
         model = stage_analyze(config, portfolio, market, store)
         _progress("📝 Composing the brief…")
-        model = stage_report(config, model)
+        model = stage_report(config, model, store)
     except Exception as exc:  # noqa: BLE001
         log.exception("Pipeline failed during analysis")
         _notify_failure(config, str(exc))

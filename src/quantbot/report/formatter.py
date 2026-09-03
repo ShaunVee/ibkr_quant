@@ -555,6 +555,25 @@ def format_caption(model: ReportModel) -> str:
         escape(f"💰 Net liq  {_fmt_money(model.net_liquidation, cur)}"
                f"    ·    Cash  {_fmt_money(model.total_cash, cur)}")
     )
+    # Deterministic headline lines (today's move + sigma tag, and the vs-index dollar
+    # figure) so the phone-notification preview is informative even on a fallback-
+    # template day, when the narrative below may not lead with money.
+    det: list[str] = []
+    mv = model.moves
+    if mv is not None and mv.port_ret_pct is not None:
+        sign = "+" if mv.port_ret_pct >= 0 else ""
+        line = f"Today {sign}{mv.port_ret_pct:.1f}%"
+        if mv.port_z is not None:
+            line += f" ({abs(mv.port_z):.1f}σ, {'unusual' if mv.unusual else 'normal range'})"
+        det.append(line)
+    mn = model.money
+    if mn is not None and mn.vs_index_pnl is not None and mn.bench_symbol:
+        verb = "ahead of" if mn.vs_index_pnl >= 0 else "behind"
+        det.append(
+            f"{_signed_full_money(mn.vs_index_pnl, cur)} {verb} just buying {mn.bench_symbol}"
+        )
+    if det:
+        parts.append(f"<b>{escape('  ·  '.join(det))}</b>")
     if model.narrative:
         # Trim on whole-sentence boundaries so the teaser never cuts mid-sentence. A raw
         # ". " scan would break on abbreviations ("vs.", "e.g."); split_sentences only

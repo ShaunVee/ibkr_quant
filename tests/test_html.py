@@ -59,3 +59,22 @@ def test_caption_has_headline_and_flag_summary():
     assert "2 flags" in caption
     # Nudge to open the attached document.
     assert "Tap the file" in caption
+
+
+def test_caption_deterministic_money_line_from_money_model():
+    from quantbot.analysis.movement import MoveContext
+
+    model = _money_model()  # vs_index_pnl=-1800, bench SPY
+    model.moves = MoveContext(port_ret_pct=-1.2, port_z=-2.6, unusual=True)
+    caption = formatter.format_caption(model)
+    # Today's move + sigma tag, and the vs-index dollar figure, are always present
+    # regardless of what the (LLM or fallback) narrative leads with.
+    assert "Today -1.2% (2.6σ, unusual)" in caption
+    assert "behind just buying SPY" in caption
+    assert "-1,800 USD" in caption
+
+
+def test_caption_deterministic_lines_omitted_when_no_data():
+    caption = formatter.format_caption(_model())  # no moves/money set
+    assert "Today +" not in caption and "Today -" not in caption
+    assert "just buying" not in caption
