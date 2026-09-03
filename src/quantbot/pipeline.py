@@ -23,23 +23,29 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import numpy as np
 import pandas as pd
 
-from quantbot.analysis import changes as changes_mod
-from quantbot.analysis import flags as flags_mod
 from quantbot.analysis import (
     benchmark,
     contribution,
     covariance,
     diversification,
-    drivers as drivers_mod,
-    events as events_mod,
     fundamental,
     macro,
-    money as money_mod,
     movement,
     risk,
     stress,
     technical,
     trends,
+)
+from quantbot.analysis import changes as changes_mod
+from quantbot.analysis import (
+    drivers as drivers_mod,
+)
+from quantbot.analysis import (
+    events as events_mod,
+)
+from quantbot.analysis import flags as flags_mod
+from quantbot.analysis import (
+    money as money_mod,
 )
 from quantbot.config import Config, load_config
 from quantbot.ingestion.brokers.factory import make_broker
@@ -166,13 +172,12 @@ def stage_analyze(
     # keeps behaviour unchanged when the broker doesn't report a date.
     today = portfolio.report_date or run_date
 
-    # Prices: fetch, cache to SQLite, build DataFrames for TA + risk.
+    # Prices: fetch (cache-first, delta-updated), build DataFrames for TA + risk.
     price_frames: dict[str, pd.DataFrame] = {}
     technicals: dict[str, TechnicalSnapshot] = {}
     for h in portfolio.equity_holdings:
-        df = market.daily_prices(h.symbol, config.history_days)
+        df = _fetch_prices(store, market, h.symbol, config.history_days, run_date)
         if not df.empty:
-            _cache_prices(store, h.symbol, df)
             price_frames[h.symbol] = df
         technicals[h.symbol] = technical.compute(h.symbol, df)
 
@@ -219,7 +224,9 @@ def stage_analyze(
     )
 
     # --- driver attribution (#7): why did each notable mover move? theme vs name-specific ---
-    drivers_model = _drivers(config, market, store, moves, price_frames, fundamentals)
+    drivers_model = _drivers(
+        config, market, store, moves, price_frames, fundamentals, today
+    )
 
     # --- structure layer (A): correlation/covariance-derived analyses ---
     cov_model = covariance.build(price_frames)
@@ -231,12 +238,16 @@ def stage_analyze(
     contribution_model = contribution.compute(cov_model, risk_metrics.weights)
 
     # --- benchmark-relative performance (analysis #5) ---
-    benchmark_model = _benchmark(config, market, store, risk_metrics.weights, price_frames)
+    benchmark_model = _benchmark(
+        config, market, store, risk_metrics.weights, price_frames, today
+    )
 
     # Rate proxy series — fetched once and shared by the event radar (#4) and the stress
     # test (#6), so a single bond-ETF pull feeds both.
     rate_proxy_symbol = config.events.get("rate_proxy", "TLT")
-    rate_proxy_close = _rate_proxy_series(config, market, store, rate_proxy_symbol)
+    rate_proxy_close = _rate_proxy_series(
+        config, market, store, rate_proxy_symbol, today
+    )
 
     # --- event radar (analysis #4): forward calendar + rates exposure ---
     events_model = _events(
@@ -317,6 +328,7 @@ def _benchmark(
     store: Store,
     weights: dict[str, float],
     price_frames: dict[str, pd.DataFrame],
+    today: date,
 ):
     """Fetch the benchmark and compute relative performance. Degrades to None (or
     drift-only) on any data issue so it never breaks the report."""
@@ -328,9 +340,8 @@ def _benchmark(
     try:
         bench_close = None
         if symbol:
-            df = market.daily_prices(symbol, config.history_days)
+            df = _fetch_prices(store, market, symbol, config.history_days, today)
             if not df.empty:
-                _cache_prices(store, symbol, df)
                 bench_close = df["close"]
         port_returns = risk.portfolio_return_series(weights, price_frames)
         return benchmark.compute(
@@ -353,6 +364,7 @@ def _drivers(
     moves,
     price_frames: dict[str, pd.DataFrame],
     fundamentals,
+    today: date,
 ):
     """Attribute today's notable movers to their themes + attach catalyst headlines.
 
@@ -374,14 +386,12 @@ def _drivers(
             if ticker in price_frames:            # already held — reuse the pulled series
                 driver_frames[ticker] = price_frames[ticker]
                 continue
-            df = market.daily_prices(ticker, config.history_days)
+            df = _fetch_prices(store, market, ticker, config.history_days, today)
             if not df.empty:
-                _cache_prices(store, ticker, df)
                 driver_frames[ticker] = df
-
         news_fn = None
         if config.providers.get("market_data", {}).get("news"):
-            news_fn = lambda sym: _catalysts(market, sym)  # noqa: E731
+            news_fn = lambda sym: _catalysts(market, sym, today=today)  # noqa: E731
 
         return drivers_mod.compute(
             moves, price_frames, driver_frames, driver_map, default_driver,
@@ -393,9 +403,8 @@ def _drivers(
         return None
 
 
-def _catalysts(market: MarketData, symbol: str, limit: int = 2):
+def _catalysts(market: MarketData, symbol: str, limit: int = 2, *, today: date):
     """Map raw provider headlines to Catalyst records for one abnormal mover."""
-    today = date.today()
     out = []
     for item in market.company_news(symbol, days_back=5)[:limit]:
         when = None
@@ -421,17 +430,16 @@ def _catalysts(market: MarketData, symbol: str, limit: int = 2):
 
 
 def _rate_proxy_series(
-    config: Config, market: MarketData, store: Store, symbol: str
+    config: Config, market: MarketData, store: Store, symbol: str, today: date
 ) -> pd.Series | None:
     """Fetch the rates-proxy (bond ETF) close series once. Cached to SQLite and shared by
     the event radar and the stress test. Degrades to None on any issue."""
     if not symbol:
         return None
     try:
-        df = market.daily_prices(symbol, config.history_days)
+        df = _fetch_prices(store, market, symbol, config.history_days, today)
         if df.empty:
             return None
-        _cache_prices(store, symbol, df)
         return df["close"]
     except Exception as exc:  # noqa: BLE001 - rate proxy is optional context
         log.warning("Rate proxy fetch failed (%s); skipping rate-sensitive analyses.", exc)
@@ -517,6 +525,64 @@ def _cache_prices(store: Store, symbol: str, df: pd.DataFrame) -> None:
         for idx, row in df.iterrows()
     ]
     store.upsert_prices(symbol, rows)
+
+
+# Extra calendar days requested beyond the apparent gap when delta-fetching, to cover
+# weekends/holidays between the last cached close and today.
+_DELTA_BUFFER_DAYS = 7
+# Minimum window for a delta fetch — small enough to stay polite to the provider,
+# large enough that a missed day or two doesn't leave the series ragged.
+_DELTA_MIN_DAYS = 7
+
+
+def _cache_to_frame(rows: list[dict]) -> pd.DataFrame:
+    """Rebuild a price DataFrame (DatetimeIndex, OHLCV columns) from cached rows."""
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    df.index = pd.to_datetime(df.pop("px_date"))
+    df.index.name = "date"
+    cols = ["open", "high", "low", "close", "volume"]
+    return df[[c for c in cols if c in df.columns]].astype(float)
+
+
+def _fetch_prices(
+    store: Store, market: MarketData, symbol: str, history_days: int, today: date
+) -> pd.DataFrame:
+    """Full price history for ``symbol``, leaning on the SQLite price cache.
+
+    First run (cache empty): fetch the full window from the provider and cache it —
+    identical to the old behaviour. Later runs: request only the days since the last
+    cached close (plus a buffer), merge them over the cache, and persist just the new
+    rows — ~90% less provider traffic than re-pulling the whole window every morning.
+    If the provider returns nothing (yfinance is occasionally flaky), fall back to the
+    cached series so analyses degrade to slightly stale data instead of silently
+    losing their section.
+    """
+    cached = _cache_to_frame(store.get_prices(symbol))
+    if cached.empty:
+        df = market.daily_prices(symbol, history_days)
+        if not df.empty:
+            _cache_prices(store, symbol, df)
+        return df
+
+    gap_days = (today - cached.index.max().date()).days + _DELTA_BUFFER_DAYS
+    fresh = market.daily_prices(symbol, max(gap_days, _DELTA_MIN_DAYS))
+    if fresh.empty:
+        log.warning(
+            "No fresh prices for %s; falling back to cached series up to %s",
+            symbol,
+            cached.index.max().date(),
+        )
+        return cached.tail(history_days)
+
+    # Provider rows win where dates overlap (splits/corrections); cache only what's new.
+    combined = pd.concat([cached, fresh])
+    combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+    new_rows = combined.loc[combined.index > cached.index.max()]
+    if not new_rows.empty:
+        _cache_prices(store, symbol, new_rows)
+    return combined.tail(history_days)
 
 
 def _num(val) -> float | None:
